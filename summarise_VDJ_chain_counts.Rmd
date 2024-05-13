@@ -1,0 +1,130 @@
+---
+title: "summarise VDJ chain counts"
+author: "Victoria Muliadi"
+date: "2024-04-22"
+output: html_document
+---
+
+Summarise UMI counts of each VDJ chain (IGH, IGK, IGL, TRA, TRB, TRD, TRG) as a new Assay in Seurat spatial GEX object
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+```{r load packages}
+library(semla)
+library(tidyverse)
+library(patchwork)
+```
+
+# Create new Assay(s) in Seurat object
+```{r load seurat object}
+# se <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumC_clones_mixcr.rds")
+
+DefaultAssay(se) <- "Clone"
+
+df.se <- GetAssayData(se)
+
+chain <- str_split_i(rownames(se), pattern = "clone", i = 1) # includes IGH isotypes
+
+chain.group <- str_extract(chain, pattern = "[aA-zZ]{3}") # extract only first 3 matches (i.e. all IGH isotypes are grouped together)
+
+df.se.sum <- aggregate(df.se, data.frame(chain.group), sum)
+
+df.se.sum <- df.se.sum %>% column_to_rownames(var = "chain.group")
+
+se[["VDJChain"]] <- CreateAssayObject(df.se.sum)
+
+df.se.iso.sum <- aggregate(df.se, data.frame(chain), sum)
+
+# create new assay with only IGH isotypes
+# extract IGH only
+
+chain_igh <- "IGH.?"
+
+df.se.iso.sub <- df.se.iso.sum[grep(chain_igh, df.se.iso.sum$chain), ]
+
+df.se.iso.sub$chain[df.se.iso.sub$chain == "IGH"] <- "unassigned"
+
+df.se.iso.sub <- df.se.iso.sub %>% column_to_rownames(var = "chain")
+
+se[["VDJIsotype"]] <- CreateAssayObject(df.se.iso.sub)
+
+```
+
+# Save / load Seurat object
+```{r save / load grouped clones seurat object}
+# write_rds(se, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA2_tumB_C_E_clones_grouped_mixcr.rds")
+# se <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_clones_grouped_mixcr.rds")
+
+```
+
+# Plot chain groups
+```{r plot chain groups, fig.width=10}
+# se <- LoadImages(se)
+
+DefaultAssay(se) <- "VDJChain"
+
+vdj.chains <- rownames(se)
+
+# colour scheme
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+# for (i in 1:3) {
+#   for (chain in vdj.chains) {
+#     p <- MapFeatures(se, features = chain, section_number = i, image_use = "raw", pt_size = 1.3, colors = col_scale_genes, scale_alpha = T, pt_stroke = 0.5, max_cutoff = 0.95) & theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+#     print(p)
+#     ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_groups/BCSA2/","BCSA2_tum", i, "_", chain, ".png"), plot = p, width = 10, units = "in")
+#   }
+# }
+
+for (chain in vdj.chains) {
+  p <- MapFeatures(se, features = chain, image_use = "raw", pt_size = 1.3, colors = col_scale_genes, scale_alpha = T, pt_stroke = 0.5, max_cutoff = 0.95) & theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+  print(p)
+ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_groups/BCSA3/","BCSA3_tumD_", chain, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+# Plot IGH isotypes
+
+```{r plot IGH isotypes with UMI cutoff 1, fig.width=10}
+# set default assay as "VDJIsotype"
+DefaultAssay(se) <- "VDJIsotype"
+
+# set UMI cutoff >= 1
+iso.UMI.1 <- GetAssayData(se) > 0
+
+se[["VDJIsotype.UMI.1"]] <- CreateAssayObject(iso.UMI.1)
+
+# plot UMI cutoff >= 1
+DefaultAssay(se) <- "VDJIsotype.UMI.1"
+
+# get isotype names
+igh.iso <- rownames(se)
+
+for (i in 1:3) {
+  for (chain in igh.iso) {
+    p <- MapFeatures(se, features = chain, section_number = i, image_use = "raw", pt_size = 1, colors = col_scale_genes, scale_alpha = T, pt_stroke = 0.5)
+    print(p)
+    ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_groups/BCSA2/","BCSA2_tum", i, "_", chain, ".png"), plot = p, width = 10, units = "in")
+  }
+}
+
+# for (chain in igh.iso) {
+#   p <- MapFeatures(se, features = chain, image_use = "raw", pt_size = 1, colors = col_scale_genes, scale_alpha = T, pt_stroke = 0.5)
+#   print(p)
+#   ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_groups/BCSA1/","BCSA1_tumA_", chain, ".png"), plot = p, width = 10, units = "in")
+# }
+
+```
+
+
+
+
+
+
+
+
+

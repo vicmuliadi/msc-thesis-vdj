@@ -1,0 +1,1665 @@
+---
+title: "spatial GEX downstream analysis (semla)"
+author: "Victoria Muliadi"
+date: "2024-04-10"
+output: html_document
+---
+
+Downstream analysis of spatial GEX data using the 'semla' package
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+
+```{r load packages}
+library(semla)
+library(tidyverse)
+library(patchwork)
+library(scico)
+library(singlet)
+library(SeuratData)
+library(gprofiler2)
+```
+
+# Load Seurat object
+
+```{r load seurat, fig.width=10}
+
+root.dir <- "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/"
+
+se <- read_rds(paste0(root.dir, "BCSA3_tumD_clones_mixcr.rds"))
+
+# since there may be clone assays, set default assay to "spatial" (i.e. gene expression)
+DefaultAssay(se) <- "Spatial"
+
+# plot tissue images
+ImagePlot(se)
+  
+```
+
+# Normalise, scale, find variable features, find clusters
+
+```{r process gex data}
+se <- se |>
+  NormalizeData() |>
+  ScaleData() |>
+  FindVariableFeatures() |>
+  RunPCA() |>
+  FindNeighbors(reduction = "pca", dims = 1:30) |>
+  FindClusters()
+
+```
+
+# Plot clusters
+
+```{r plot seurat clusters, fig.width=12}
+MapLabels(se, column_name = "seurat_clusters", 
+          image_use = "raw", pt_size = 1.3) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 3), ncol = 2))
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD_clusters_def.png")
+
+# Plot clusters in split view
+MapLabels(se, column_name = "seurat_clusters", pt_size = 1.3,
+          section_number = 1, split_labels = TRUE, ncol = 4)
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD1_split_clusters_def.png", width = 12, units = "in")
+
+MapLabels(se, column_name = "seurat_clusters", pt_size = 1.3,
+          section_number = 2, split_labels = TRUE, ncol = 4)
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD2_split_clusters_def.png", width = 12, units = "in")
+
+```
+
+
+```{r differentially expressed genes in clusters}
+de.markers <- FindAllMarkers(se, logfc.threshold = 1, only.pos = TRUE, return.thresh = 0.01)
+
+head(de.markers)
+
+write_csv(de.markers, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD_clusters_markers_def.csv")
+
+```
+
+```{r cluster marker genes}
+# grab the name of the first marker gene for each cluster
+de.markers.one <- de.markers %>%
+  group_by(cluster) %>%
+  slice_head(n = 1)
+
+# grab the name of the first 10 marker genes for each cluster
+de.markers.ten <- de.markers %>%
+  group_by(cluster) %>%
+  slice_head(n = 10)
+
+write_csv(de.markers.ten, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD_clusters_10_markers_def.csv")
+
+#Plot first marker gene for each cluster spatially
+
+# colour scheme
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+for (i in 1:nrow(de.markers.one)) {
+  p <- MapFeatures(se, features = de.markers.one$gene[i], image_use = "raw", scale_alpha = T, colors = col_scale_genes, pt_size = 1.5, pt_alpha = 0.5)
+  print(p)
+  # ggsave(paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/", "BCSA3_tumD_cluster", de.markers.one$cluster[i], "_marker_def.png"))
+}
+
+```
+
+
+
+```{r TLS genes seurat clusters, fig.width=8}
+tls.genes <- c("TRBC2", "MS4A1", "LTB", "LAMP3", "CXCR3", "CXCL13", "CCR7", "CCL19")
+
+DotPlot(se, features = tls.genes) + xlab("TLS genes") + ylab("Seurat cluster")
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clusters/BCSA3_tumD_TLS_genes_def.png", width = 8, units = "in")
+
+```
+
+# Run NMF
+
+```{r run NMF, fig.width=8}
+# create v3/v4 assay within v5 seurat
+
+# NOTES FROM 240108. In SeuratV5, which is the one loaded here, they changed how the assays are
+## accessed. Now we have to use "$" instead of "@". RunNMF accesses it with "@", so it doesnt work
+## with the current Seurat version. Therefore, I am going to create a new assay in the V5 seurat that
+## is the same as the one that RunNMF is expecting, so V3
+# OPTIONAL: I am keeping only variable genes for the NMF
+
+se[["Spatial3"]] <- as(
+  object = subset(se[["Spatial"]], features = VariableFeatures(se)),
+  Class = "Assay"
+  ) #THIS STEP IS WHERE I CREATE A V4/3 ASSAY INSIDE OF MY V5 OBJECT
+
+# run NMF
+# set seed for reproducibility
+
+set.seed(42)
+se <- RunNMF(se, assay = "Spatial3", reps = 3) # I RUN NMF ON THE V4/3 ASSAY
+
+# display rank plot of NMF cross-validation results
+
+RankPlot(se)
+
+```
+
+
+
+```{r plot NMF, fig.width=10}
+
+# theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+
+for (i in 1:7) {
+  p <- MapFeatures(se.nmf, 
+            features = paste0("NMF_", i),
+            pt_size = 2,
+            override_plot_dims = TRUE, 
+            colors = viridis::magma(n = 11, direction = -1)) &
+  theme(plot.title = element_blank())
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/","BCSA3_tumD_NMF_", i, "_up.png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+
+```{r NMF gene contributions, fig.width=10}
+for (i in 1:7) {
+  p <- PlotFeatureLoadings(se, 
+                    dims = i, 
+                    reduction = "nmf", 
+                    nfeatures = 30,
+                    mode = "dotplot", 
+                    fill = "darkmagenta",
+                    pt_size = 3)
+  print(p)
+  # ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/","BCSA3_tumD_NMF_", i, "_factor_loadings.png"), plot = p, width = 10, units = "in")
+}
+
+
+```
+
+```{r plot NMF gene loadings with colour scheme}
+nmf.colours <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D")
+
+for (i in 1:7) {
+  p <- PlotFeatureLoadings(se.nmf, 
+                    dims = i, 
+                    reduction = "nmf", 
+                    nfeatures = 30,
+                    mode = "dotplot", 
+                    fill = nmf.colours[i],
+                    pt_size = 3) + labs(title = paste0("F", i), x = "Gene")
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/","BCSA3_tumD_NMF_", i, "_factor_loadings_cols_new.png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+
+```{r feature loadings heatmap, fig.height=10}
+PlotFeatureLoadings(se, 
+                    dims = 1:7, 
+                    reduction = "nmf", 
+                    nfeatures = 20, 
+                    mode = "heatmap", 
+                    gradient_colors = viridis::magma(n = 11, direction = -1))
+
+```
+
+```{r sort gene loadings}
+# fetch feature.loadings from DimReduc object
+nmf_loadings <- se[["nmf"]]@feature.loadings
+
+# Convert to long format and group data by factor
+gene_loadings_sorted <- nmf_loadings |> 
+  as.data.frame() |> 
+  tibble::rownames_to_column(var = "gene") |> 
+  as_tibble() |> 
+  tidyr::pivot_longer(all_of(colnames(nmf_loadings)), names_to = "fctr", values_to = "loading") |> 
+  mutate(fctr = factor(fctr, colnames(nmf_loadings))) |> 
+  group_by(fctr) |> 
+  arrange(fctr, -loading)
+
+# Extract top 10 genes per factor
+gene_loadings_top <- gene_loadings_sorted |> 
+  slice_head(n = 10)
+```
+
+
+```{r functional enrichment analysis NMF_1}
+library(gprofiler2)
+
+# Get gene sets
+gene_set_nmf_1 <- gene_loadings_top |> 
+  filter(fctr == "NMF_1") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_1 <- gost(query = gene_set_nmf_1$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_1 |> select(p_value, term_size, query_size, intersection_size, term_name)
+```
+
+```{r functional enrichment analysis NMF_2}
+# Get gene sets
+gene_set_nmf_2 <- gene_loadings_top |> 
+  filter(fctr == "NMF_2") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_2 <- gost(query = gene_set_nmf_2$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_2 |> select(p_value, term_size, query_size, intersection_size, term_name)
+```
+
+```{r functional enrichment analysis NMF_3}
+# Get gene sets
+gene_set_nmf_3 <- gene_loadings_top |> 
+  filter(fctr == "NMF_3") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_3 <- gost(query = gene_set_nmf_3$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_3 |> select(p_value, term_size, query_size, intersection_size, term_name)
+```
+
+```{r functional enrichment analysis NMF_4}
+# Get gene sets
+gene_set_nmf_4 <- gene_loadings_top |> 
+  filter(fctr == "NMF_4") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_4 <- gost(query = gene_set_nmf_4$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_4 |> select(p_value, term_size, query_size, intersection_size, term_name)
+
+```
+
+
+```{r functional enrichment analysis NMF_5}
+# Get gene sets
+gene_set_nmf_5 <- gene_loadings_top |> 
+  filter(fctr == "NMF_5") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_5 <- gost(query = gene_set_nmf_5$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_5 |> select(p_value, term_size, query_size, intersection_size, term_name)
+```
+
+
+```{r functional enrichment analysis NMF_6}
+# Get gene sets
+gene_set_nmf_6 <- gene_loadings_top |> 
+  filter(fctr == "NMF_6") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_6 <- gost(query = gene_set_nmf_6$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_6 |> select(p_value, term_size, query_size, intersection_size, term_name)
+```
+
+
+```{r functional enrichment analysis NMF_7}
+# Get gene sets
+gene_set_nmf_7 <- gene_loadings_top |> 
+  filter(fctr == "NMF_7") |> 
+  slice_head(n = 10)
+
+# Run FEA
+fea_results_nmf_7 <- gost(query = gene_set_nmf_7$gene, ordered_query = TRUE, organism = "hsapiens", sources = "GO:BP")$result |> 
+  as_tibble()
+
+# Look at results
+fea_results_nmf_7 |> select(p_value, term_size, query_size, intersection_size, term_name)
+
+```
+
+```{r save NMF and FEA analysis}
+write_csv(gene_loadings_sorted, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_gene_loadings.csv")
+
+write_csv(fea_results_nmf_1, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_NMF_1_FEA.csv")
+
+write_csv(fea_results_nmf_3, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_NMF_3_FEA.csv")
+
+write_csv(fea_results_nmf_4, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_NMF_4_FEA.csv")
+
+write_csv(fea_results_nmf_6, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_NMF_6_FEA.csv")
+
+write_csv(fea_results_nmf_7, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/BCSA3_tumD_NMF_7_FEA.csv")
+
+```
+
+```{r plot all NMF, fig.width=10}
+selected_factors <- c(1:7)
+
+factor_colors <- c('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', 
+                   '#911eb4', '#46f0f0')
+
+# library(ggnewscale)
+
+MapMultipleFeatures(se.nmf, 
+                    features = paste0("NMF_", selected_factors), 
+                    colors = factor_colors, 
+                    image_use = "raw", 
+                    override_plot_dims = TRUE, 
+                    pt_size = 2.5) + plot_layout(guides = "collect")
+```
+
+
+```{r save/load seurat downstream analysis}
+write_rds(se, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_analysis.rds")
+
+se <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_analysis.rds")
+
+```
+
+## Plot genes
+
+```{r plot genes using normalised data, fig.width=10}
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+# slot = "data"
+MapFeatures(se, features = "MS4A1", image_use = "raw", pt_size = 1.5, colors = col_scale_genes, scale_alpha = T)
+
+MapFeatures(se, features = "LAMP3", image_use = "raw", pt_size = 1.5, colors = col_scale_genes, scale_alpha = T)
+
+```
+
+```{r plot genes using raw counts, fig.width=10}
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+# slot = "counts"
+MapFeatures(se, features = "MS4A1", image_use = "raw", pt_size = 1.5, colors = col_scale_genes, scale_alpha = T, slot = "counts")
+MapFeatures(se, features = "LAMP3", image_use = "raw", pt_size = 1.5, colors = col_scale_genes, scale_alpha = T, slot = "counts")
+```
+
+```{r plot TLS genes, fig.width=10}
+
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+tls.genes <- c("TRBC2", "MS4A1", "LTB", "LAMP3", "CXCR3", "CXCL13", "CCR7", "CCL19")
+
+for (gene in tls.genes) {
+  p <- MapFeatures(se, features = gene, image_use = "raw", pt_size = 1.0, slot = "data", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/gene_plots/","BCSA3_regD_", gene, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r plot marker genes, fig.width=10}
+marker.genes <- c("EPCAM", "ERBB2", "MKI67", "CD3D", "CD68", "MS4A1", "JCHAIN", "SDC1", "PECAM1", "PDGFRB", "S100A2", "KRT17", "KRT14")
+
+for (gene in marker.genes) {
+  p <- MapFeatures(se.nmf, features = gene, image_use = "raw", pt_size = 1.0, slot = "data", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5) & theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/gene_plots/","BCSA3_regD_", gene, ".png"), plot = p, width = 10, units = "in")
+}
+
+
+```
+
+```{r load analysed spatial GEX data}
+se <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_analysis.rds")
+
+se
+```
+
+```{r plasma cell markers, fig.width=10}
+pc.markers <- c("CD38", "SSR4", "CD79A")
+
+for (gene in pc.markers) {
+  p <- MapFeatures(se.nmf, features = gene, image_use = "raw", pt_size = 1.0, slot = "data", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5) & theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/gene_plots/","BCSA3_regD_", gene, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+## Format scRNAseq dataset for cell type mapping
+
+Dataset downloaded from:
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE176078
+
+```{r load scRNAseq dataset sparse matrix}
+targetdir <- "C:/Users/victo/Downloads/spatialVDJ/breast-cancer-sc/bc_scRNAseq/Wu_etal_2021_BRCA_scRNASeq/"
+
+exmtx <- ReadMtx(mtx = paste0(targetdir, "count_matrix_sparse.mtx"),
+                    cells = paste0(targetdir, "count_matrix_barcodes.tsv"),
+                    features = paste0(targetdir, "count_matrix_genes.tsv"),
+                 feature.column = 1)
+
+bc_scRNA <- CreateSeuratObject(counts = exmtx)
+
+# load metadata
+
+metadata <- fread(paste0(targetdir, "metadata.csv"))
+
+# sanity check:
+# check that cell barcode names in seurat object is the same as in metadata
+
+test <- Cells(bc_scRNA) == metadata$V1
+all(test)
+
+```
+
+```{r load metadata info to scRNAseq Seurat}
+# major cell type
+
+bc_scRNA <- AddMetaData(object = bc_scRNA,
+                        metadata = metadata$celltype_major,
+                        col.name = "celltype_major")
+
+head(bc_scRNA@meta.data)
+
+unique(bc_scRNA$celltype_major)
+
+# minor cell type
+
+bc_scRNA <- AddMetaData(object = bc_scRNA,
+                        metadata = metadata$celltype_minor,
+                        col.name = "celltype_minor")
+
+head(bc_scRNA@meta.data)
+
+unique(bc_scRNA$celltype_minor)
+
+# cell type subset
+
+bc_scRNA <- AddMetaData(object = bc_scRNA,
+                        metadata = metadata$celltype_subset,
+                        col.name = "celltype_subset")
+
+head(bc_scRNA@meta.data)
+
+unique(bc_scRNA$celltype_subset)
+
+# breast cancer subtype
+
+bc_scRNA <- AddMetaData(object = bc_scRNA,
+                        metadata = metadata$subtype,
+                        col.name = "subtype")
+
+head(bc_scRNA@meta.data)
+
+unique(bc_scRNA$subtype)
+
+# percent mito
+
+bc_scRNA <- AddMetaData(object = bc_scRNA,
+                        metadata = metadata$percent.mito,
+                        col.name = "percent.mito")
+
+head(bc_scRNA@meta.data)
+
+unique(bc_scRNA$percent.mito)
+
+```
+
+```{r view sc object}
+head(bc_scRNA)
+
+```
+
+```{r save/read sc RDS}
+# write_rds(bc_scRNA, "bc_scRNA.rds")
+# bc_scRNA <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/files/bc_scRNA.rds")
+```
+
+```{r normalise data}
+# DefaultAssay(se) <- "Spatial"
+
+bc_scRNA <- bc_scRNA |>
+  NormalizeData() |>
+  FindVariableFeatures() |> 
+  ScaleData() |> 
+  RunPCA() |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+
+# bc_scRNA <- bc_scRNA |> 
+#   FindVariableFeatures(nfeatures = 10000)
+
+# sc.var.genes <- VariableFeatures(bc_scRNA)
+# write_csv(as.data.frame(sc.var.genes), "C:/Users/victo/Downloads/spatialVDJ/scripts/files/BC_scRNAseq_genes.csv")
+```
+
+# Check genes used for cell type mapping
+
+```{r common variable genes}
+sp.var.genes <- rownames(df.load)
+# write_csv(as.data.frame(sp.var.genes), "C:/Users/victo/Downloads/spatialVDJ/scripts/files/BCSA3_tumD_spatial_genes.csv")
+
+# "CD3D" %in% sc.var.genes
+
+common.var.genes <- base::intersect(sc.var.genes, sp.var.genes)
+# write_csv(as.data.frame(common.var.genes), "C:/Users/victo/Downloads/spatialVDJ/scripts/files/BCSA3_tumD_ctype_deconv_genes.csv")
+
+# comment:
+# no CD3, TRB, CD20 genes in common variable genes (default = 2000 variable genes)
+```
+
+```{r cell type proportions as dimensional reduction}
+# to view gene contributions later
+
+se.nmf <- RunNNLS(object = se.nmf, 
+              singlecell_object = bc_scRNA, 
+              groups = "celltype_major",
+              return_as_dimred = TRUE)
+```
+
+```{r view cell type proportion gene loadings}
+# get cell type names
+DefaultAssay(se.nmf) <- "celltypeprops.major"
+cell.type.major <- rownames(se.nmf)
+
+# get gene contributions
+ctype.load <- as.data.frame(Loadings(se.nmf, reduction = "nnls"))
+colnames(ctype.load) <- cell.type.major
+
+# factor 1 = B cells
+ctype.load[order(-ctype.load$`B-cells`), ]
+
+# factor 2 = CAFs
+ctype.load[order(-ctype.load$CAFs), ]
+
+# factor 9 = T cells
+ctype.load[order(-ctype.load$`T-cells`), ]
+
+```
+
+```{r cell type mapping feature loadings}
+for (i in 1:9) {
+  p <- PlotFeatureLoadings(se.nmf, 
+                    dims = i, 
+                    reduction = "nnls", 
+                    nfeatures = 30,
+                    mode = "dotplot", 
+                    fill = "darkmagenta",
+                    pt_size = 3)
+  print(p)
+  # ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/NMF/","BCSA3_tumD_NMF_", i, "_factor_loadings.png"), plot = p, width = 10, units = "in")
+}
+```
+
+# Cell type mapping
+
+```{r predict cell type proportions minor}
+
+se.nmf <- RunNNLS(object = se.nmf, 
+              singlecell_object = bc_scRNA, 
+              groups = "celltype_minor")
+```
+
+```{r cell types minor}
+
+cell.type.minor <- rownames(se.nmf)
+
+```
+
+
+```{r plot cell type proportions minor, fig.width=12}
+
+for (ctype in cell.type.minor) {
+  p <- MapFeatures(se.nmf, features = ctype, colors = viridis::magma(n = 11, direction = -1), pt_size = 2.5, override_plot_dims = T)
+  print(p)
+}
+
+```
+
+
+```{r cell type correlation, fig.height=10}
+cell.types <- rownames(se)
+
+cor_matrix <- FetchData(se, cell.types) |> 
+  mutate_all(~ if_else(.x<0.1, 0, .x)) |>  # Filter lowest values (-> set as 0)
+  cor()
+
+diag(cor_matrix) <- NA
+max_val <- max(cor_matrix, na.rm = T)
+cols <- RColorBrewer::brewer.pal(7, "RdYlBu") |> rev(); cols[4] <- "white"
+pheatmap::pheatmap(cor_matrix, 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(cols)(100),
+                   cellwidth = 14, cellheight = 14, 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   main = "Cell type correlation\nwithin spots")
+```
+
+```{r NMF using cell type proportions, fig.height=10}
+nmf_data <- FetchData(se, cell.types) |> 
+  RcppML::nmf(k = 10, verbose = F)
+
+nmf_data_h <- nmf_data@h |> as.data.frame()
+rownames(nmf_data_h) <- paste0("Factor_", 1:10)
+colnames(nmf_data_h) <- cell.types
+
+nmf_data_h <- nmf_data_h |> 
+  mutate_at(colnames(nmf_data_h), 
+            ~(scale(., center = FALSE, scale = max(., na.rm = TRUE)/1)))
+
+nmf_data_h$Factor <- rownames(nmf_data_h) |> 
+  factor(levels = paste0("Factor_", 1:10))
+nmf_data_h_df <- nmf_data_h |> 
+  tidyr::pivot_longer(cols = all_of(cell.types), 
+                      names_to = "Cell", 
+                      values_to = "Weight")
+
+ggplot(nmf_data_h_df, aes(x=Factor, y=Cell, size=Weight, color=Weight)) +
+  geom_point() +
+  labs(title="Cell type contribution", x="Factor", y = "Cell type", 
+       color = "", size = "Scaled weight") +
+  scale_color_viridis_c(direction = -1, option = "magma") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1), 
+        panel.grid = element_blank())
+```
+
+```{r predict cell type proportions major}
+
+se.nmf <- RunNNLS(object = se.nmf, 
+              singlecell_object = bc_scRNA, 
+              groups = "celltype_major")
+```
+
+```{r cell types major}
+DefaultAssay(se.nmf) <- "celltypeprops.major"
+cell.type.major <- rownames(se.nmf)
+
+```
+
+
+```{r plot cell type proportions, fig.width=12}
+
+for (ctype in cell.type.major) {
+  p <- MapFeatures(se.nmf, features = ctype, colors = viridis::magma(n = 11, direction = -1), pt_size = 2.5, override_plot_dims = T) & theme(legend.position = "right", legend.text = element_text(angle = 0, hjust = 0))
+  print(p)
+}
+
+```
+
+```{r cell type major mapping correlation with NMF}
+nmf.se <- Embeddings(se.nmf, reduction = "nmf")
+ctype.se <- FetchData(se.nmf, paste0("celltypepropsmajor_", cell.type.major))
+
+ctype.nmf <- cor(nmf.se, ctype.se, method = "pearson", use = "pairwise.complete.obs")
+
+max_val <- max(ctype.se, na.rm = T)
+cols <- RColorBrewer::brewer.pal(7, "RdYlBu") |> rev(); cols[4] <- "white"
+pheatmap::pheatmap(ctype.nmf, 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(cols)(100),
+                   cellwidth = 30, cellheight = 30, 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_row = paste0("F", 1:7),
+                   labels_col = cell.type.major)
+
+```
+
+```{r transpose cell type major heatmap}
+# generate correlation matrix first before running this chunk
+c.cols <- c("#253E83", "white", "#ED5945")
+
+pheatmap::pheatmap(t(ctype.nmf), 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(c.cols)(100), 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_col = paste0("F", 1:7),
+                   labels_row = cell.type.major)
+```
+
+
+```{r rename cell type prop assay}
+# se.nmf <- RenameAssays(se.nmf, celltypeprops = "celltypeprops.major")
+# se.nmf <- RenameAssays(se.nmf, celltypeprops = "celltypeprops.minor")
+se.nmf <- RenameAssays(se.nmf, celltypeprops = "celltypeprops.subset")
+
+```
+
+```{r cell type minor mapping correlation with NMF, fig.width=10}
+nmf.se <- Embeddings(se.nmf, reduction = "nmf")
+ctype.se <- FetchData(se.nmf, paste0("celltypepropsminor_", cell.type.minor))
+
+ctype.nmf <- cor(nmf.se, ctype.se, method = "pearson", use = "pairwise.complete.obs")
+
+max_val <- max(ctype.se, na.rm = T)
+cols <- RColorBrewer::brewer.pal(7, "RdYlBu") |> rev(); cols[4] <- "white"
+pheatmap::pheatmap(ctype.nmf, 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(cols)(100),
+                   cellwidth = 20, cellheight = 20, 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_row = paste0("F", 1:7),
+                   labels_col = cell.type.minor)
+
+```
+
+```{r transpose cell type minor heatmap, fig.width=10}
+# generate correlation matrix first before running this chunk
+
+c.cols <- c("#253E83", "white", "#ED5945")
+
+pheatmap::pheatmap(t(ctype.nmf), 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(c.cols)(100), 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_col = paste0("F", 1:7),
+                   labels_row = cell.type.minor)
+```
+
+
+```{r predict cell type proportions subset}
+DefaultAssay(se.nmf) <- "Spatial"
+se.nmf <- RunNNLS(object = se.nmf, 
+              singlecell_object = bc_scRNA, 
+              groups = "celltype_subset")
+```
+
+```{r cell types subset}
+DefaultAssay(se.nmf) <- "celltypeprops.subset"
+cell.type.subset <- rownames(se.nmf)
+
+```
+
+
+```{r plot cell type proportions subset, fig.width=12}
+
+for (ctype in cell.type.subset) {
+  p <- MapFeatures(se.nmf, features = ctype, colors = viridis::magma(n = 11, direction = -1), pt_size = 2.5, override_plot_dims = T)
+  print(p)
+}
+
+```
+
+
+```{r cell type subset mapping correlation with NMF, fig.width=12}
+nmf.se <- Embeddings(se.nmf, reduction = "nmf")
+ctype.se <- FetchData(se.nmf, paste0("celltypepropssubset_", cell.type.subset))
+
+ctype.nmf <- cor(nmf.se, ctype.se, method = "pearson", use = "pairwise.complete.obs")
+
+max_val <- max(ctype.se, na.rm = T)
+
+cols <- RColorBrewer::brewer.pal(7, "RdYlBu") |> rev(); cols[4] <- "white"
+pheatmap::pheatmap(ctype.nmf, 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(cols)(100),
+                   cellwidth = 14, cellheight = 14, 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_row = paste0("F", 1:7),
+                   labels_col = cell.type.subset)
+
+```
+
+```{r load cell type annotations}
+ctype.annotation <- readxl::read_xlsx("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/cell_type_subset.xlsx", col_names = T)
+ctype.annotation <- ctype.annotation %>% column_to_rownames(var = "subset")
+
+rownames(ctype.annotation) <- colnames(ctype.nmf)
+
+```
+
+
+```{r transpose cell type subset heatmap, fig.width=10, fig.height=10}
+# generate correlation matrix first before running this chunk
+
+c.cols <- c("#253E83", "white", "#ED5945")
+
+pheatmap::pheatmap(t(ctype.nmf), 
+                   breaks = seq(-max_val, max_val, length.out = 100),
+                   color=colorRampPalette(c.cols)(100), 
+                   treeheight_col = 10, treeheight_row = 10, 
+                   labels_col = paste0("F", 1:7),
+                   labels_row = cell.type.subset,
+                   annotation_row = ctype.annotation,
+                   annotation_colors = mycolors)
+```
+
+```{r color palette for cell type annotation (?)}
+mycolors <- RColorBrewer::brewer.pal(length(unique(ctype.annotation$`cell type`)), "Set3")
+names(mycolors) <- unique(ctype.annotation$`cell type`)
+mycolors <- list(category = mycolors)
+```
+
+
+
+# Seurat clusters analysis
+
+```{r cell type subsets in seurat clusters, fig.width=25}
+DotPlot(se.nmf, features = cell.type.subset, scale.max = 75) + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + ylab("Seurat clusters")
+
+```
+
+
+```{r seurat clusters vs TLS cell types (subset), fig.width=10}
+DotPlot(se.nmf, features = c("T-cells-c3-CD4+-Tfh-CXCL13", "Myeloid-c0-DC-LAMP3", "T-cells-c0-CD4+-CCR7")) + ylab("Seurat clusters")
+```
+
+```{r cell type (major) in seurat clusters}
+DefaultAssay(se.nmf) <- "celltypeprops.major"
+cell.type.major <- rownames(se.nmf)
+DotPlot(se.nmf, features = cell.type.major) + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + ylab("Seurat clusters")
+
+```
+
+```{r cell type (major) in seurat clusters, fig.width=15}
+DefaultAssay(se.nmf) <- "celltypeprops.minor"
+cell.type.minor <- rownames(se.nmf)
+DotPlot(se.nmf, features = cell.type.minor, scale.max = 75) + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + ylab("Seurat clusters")
+
+```
+
+# Plot number of unique clones in clusters (Seurat / NMF)
+
+```{r plot unique clones in each seurat cluster}
+# code from Kim:
+
+# Idents(se2) <- "seurat_clusters"
+# VlnPlot(se2, features = c("nFeature_LRIG"), ncol = 1, pt.size = 0.000001, cols = col_vector, log=T) + theme(axis.text.x = element_text(angle = 0, hjust = 0.5,size = 12), axis.text.y = element_text(size = 16)) +NoLegend() 
+# ggsave("BC_P2_Violinplot_unique_IGreceptors_clusters.png")
+
+```
+
+```{r plot unique clones in NMF, fig.height=10}
+# DefaultAssay(se.nmf) <- "Clone"
+
+# df.se <- GetAssayData(se.nmf)
+
+# create new Assay with only IG clones
+# df.se.ig <- df.se[grepl("IG.?", rownames(df.se)), ]
+# se.nmf[["IGChain"]] <- CreateAssayObject(df.se.ig)
+
+# for each NMF, take spots with highest activity (90th percentile)
+nmf_1.spots <- names(se.nmf$nmf_1[se.nmf$nmf_1 == "1"])
+nmf_1.spots <- nmf_1.spots[!is.na(nmf_1.spots)]
+nmf_1.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_1.spots)
+
+nmf_2.spots <- names(se.nmf$nmf_2[se.nmf$nmf_2 == "2"])
+nmf_2.spots <- nmf_2.spots[!is.na(nmf_2.spots)]
+nmf_2.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_2.spots)
+
+nmf_3.spots <- names(se.nmf$nmf_3[se.nmf$nmf_3 == "3"])
+nmf_3.spots <- nmf_3.spots[!is.na(nmf_3.spots)]
+nmf_3.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_3.spots)
+
+nmf_4.spots <- names(se.nmf$nmf_4[se.nmf$nmf_4 == "4"])
+nmf_4.spots <- nmf_4.spots[!is.na(nmf_4.spots)]
+nmf_4.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_4.spots)
+
+nmf_5.spots <- names(se.nmf$nmf_5[se.nmf$nmf_5 == "5"])
+nmf_5.spots <- nmf_5.spots[!is.na(nmf_5.spots)]
+nmf_5.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_5.spots)
+
+nmf_6.spots <- names(se.nmf$nmf_6[se.nmf$nmf_6 == "6"])
+nmf_6.spots <- nmf_6.spots[!is.na(nmf_6.spots)]
+nmf_6.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_6.spots)
+
+nmf_7.spots <- names(se.nmf$nmf_7[se.nmf$nmf_7 == "7"])
+nmf_7.spots <- nmf_7.spots[!is.na(nmf_7.spots)]
+nmf_7.nclones <- FetchData(object = se.nmf, vars = "nFeature_IGChain", cells = nmf_7.spots)
+
+# create dataframe of number of unique clones in each factor
+nmf_1.nclones.df <- data.frame(f = c("F1"), nclones = nmf_1.nclones$nFeature_IGChain)
+nmf_2.nclones.df <- data.frame(f = c("F2"), nclones = nmf_2.nclones$nFeature_IGChain)
+nmf_3.nclones.df <- data.frame(f = c("F3"), nclones = nmf_3.nclones$nFeature_IGChain)
+nmf_4.nclones.df <- data.frame(f = c("F4"), nclones = nmf_4.nclones$nFeature_IGChain)
+nmf_5.nclones.df <- data.frame(f = c("F5"), nclones = nmf_5.nclones$nFeature_IGChain)
+nmf_6.nclones.df <- data.frame(f = c("F6"), nclones = nmf_6.nclones$nFeature_IGChain)
+nmf_7.nclones.df <- data.frame(f = c("F7"), nclones = nmf_7.nclones$nFeature_IGChain)
+
+nmf.nclones.test <- rbind(nmf_1.nclones.df, nmf_2.nclones.df, nmf_3.nclones.df, nmf_4.nclones.df, nmf_5.nclones.df, nmf_6.nclones.df, nmf_7.nclones.df)
+
+ggplot(nmf.nclones.test, aes(x = f, y = nclones)) + geom_violin(aes(fill = f), linewidth = 1) + geom_point(position = position_jitter(), size = 0.01) + xlab("NMF factors") + ylab("No. of unique IG clones per spot") + scale_fill_brewer(palette = "Set2", name = "NMF") + theme_classic(base_size = 30) + guides(fill = "none") + scale_y_continuous(expand = expansion(mult = 0.01), transform = "log10")
+
+```
+
+```{r statistical test}
+# anova
+res_aov <- aov(nclones ~ f, data = nmf.nclones.test)
+summary(res_aov)
+
+# tukey's test
+tuk <- TukeyHSD(res_aov, conf.level = 0.95)
+
+# holm's method (more conservative than tukey's test)
+hol <- pairwise.t.test(nmf.nclones.test$nclones, nmf.nclones.test$f, p.adjust="holm") 
+
+summary(res_aov)
+tuk
+hol
+
+```
+
+
+```{r most abundant clones shared}
+igk.clones <- c("IGKclone17", "IGKclone7")
+igl.clones <- c("IGLclone2", "IGLclone3", "IGLclone8", "IGLclone6")
+igha.clones <- "IGHAclone123"
+ighg.clones <- c("IGHGclone58", "IGHGclone346", "IGHGclone63")
+ighm.clones <- c("IGHMclone208", "IGHMclone971", "IGHMclone1251", "IGHMclone1536", "IGHMclone1612")
+
+```
+
+
+# Note on slots of dimensional reduction in Seurat (DimReduc):
+Embeddings() : spot / cluster information
+Loadings() : gene / factor information (variable genes)
+
+# Radial distances with NMF
+```{r NMF_1 as cluster}
+# load NMF embeddings as dataframe
+nmf.df <- as.data.frame(nmf.se)
+
+# 75th percentile
+nmf1.q75 <- quantile(nmf.df$NMF_1, probs = 0.75)
+nmf1.q75 <- unname(nmf1.q75)
+
+se.nmf$nmf_1 <- ifelse(nmf.se[, 1] >= nmf1.q75, "1", NA)
+
+nmf1.q75.pl <- MapLabels(se.nmf, column_name = "nmf_1", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+# 90th percentile
+nmf1.q90 <- quantile(nmf.df$NMF_1, probs = 0.90)
+nmf1.q90 <- unname(nmf1.q90)
+
+se.nmf$nmf_1 <- ifelse(nmf.se[, 1] >= nmf1.q90, "1", NA)
+
+nmf1.q90.pl <- MapLabels(se.nmf, column_name = "nmf_1", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+
+```
+
+```{r NMF_2 as cluster}
+# 75th percentile
+nmf2.q75 <- quantile(nmf.df$NMF_2, probs = 0.75)
+nmf2.q75 <- unname(nmf2.q75)
+
+se.nmf$nmf_2 <- ifelse(nmf.se[, 2] >= nmf2.q75, "2", NA)
+
+nmf2.q75.pl <- MapLabels(se.nmf, column_name = "nmf_2", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+# 90th percentile
+nmf2.q90 <- quantile(nmf.df$NMF_2, probs = 0.90)
+nmf2.q90 <- unname(nmf2.q90)
+
+se.nmf$nmf_2 <- ifelse(nmf.se[, 2] >= nmf2.q90, "2", NA)
+
+nmf2.q90.pl <- MapLabels(se.nmf, column_name = "nmf_2", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2, colors = "#D95F02") +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+```{r radial distance NMF_2 q75}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "nmf_2", 
+                     selected_groups = "2", convert_to_microns = TRUE)
+
+se.nmf$r_dist_2_sqrt <- sign(se.nmf$r_dist_2)*sqrt(abs(se.nmf$r_dist_2))
+MapFeatures(se.nmf, features = "r_dist_2_sqrt", center_zero = TRUE, pt_size = 2,
+            colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+            override_plot_dims = TRUE)
+
+```
+
+radial distances are measured from cluster border
+positive distances: further away from cluster border
+negative distances: closer to / within cluster border
+
+```{r radial distance of IGK clones from NMF_2 q75}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igk.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igk.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGL clones from NMF_2 q75}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igl.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igl.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHG clones from NMF_2 q75}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighg.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(ighg.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHA clones from NMF_2 q75}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igha.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igha.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHM clones from NMF_2 q75}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighm.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(ighm.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance NMF_2 q90}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "nmf_2", 
+                     selected_groups = "2", convert_to_microns = TRUE)
+
+se.nmf$r_dist_2_sqrt <- sign(se.nmf$r_dist_2)*sqrt(abs(se.nmf$r_dist_2))
+MapFeatures(se.nmf, features = "r_dist_2_sqrt", center_zero = TRUE, pt_size = 2,
+            colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+            override_plot_dims = TRUE)
+
+```
+
+```{r radial distance of IGK clones from NMF_2 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igk.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igk.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "indianred") +
+  xlab("Distance from F2 border (µm)") + theme_classic() + scale_color_brewer(palette = "Set2", name = "clones")
+
+```
+
+```{r radial distance of IGL clones from NMF_2 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igl.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igl.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "indianred") +
+  xlab("Distance from F2 border (µm)") + theme_classic() + scale_color_brewer(palette = "Set2", name = "clones")
+
+
+```
+
+```{r radial distance of light chain clones from NMF_2 q90}
+lchain <- c(igk.clones, igl.clones)
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = lchain)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(lchain), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "snow4") +
+  xlab("Distance from F2 border (µm)") + theme_classic(base_size = 12) + scale_color_brewer(palette = "Dark2", name = "clones") +
+  annotate("rect", xmax = 0, xmin = -Inf, ymax = Inf, ymin = -Inf, alpha = 0.3, fill = "ivory3") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05)))
+
+```
+
+```{r radial distance of heavy chain clones from NMF_2 q90}
+hchain <- c(igha.clones, ighg.clones)
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = hchain)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(hchain), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "snow4") +
+  xlab("Distance from F2 border (µm)") + theme_classic() + scale_color_manual(values = c("#386CB0", "#6A3D9A", "#BF5B17", "#666666"), name = "clones") +
+  annotate("rect", xmax = 0, xmin = -Inf, ymax = Inf, ymin = -Inf, alpha = 0.3, fill = "ivory3") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05)))
+
+```
+
+
+```{r radial distance of IGHG clones from NMF_2 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighg.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(ighg.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed") +
+  xlab("Distance from F2 border (µm)")
+
+```
+
+```{r radial distance of IGHA clones from NMF_2 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igha.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(igha.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed") +
+  xlab("Distance from F2 border (µm)")
+
+```
+
+```{r radial distance of IGHM clones from NMF_2 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighm.clones)) |> 
+  filter(r_dist_2 < 2e3) |> 
+  pivot_longer(all_of(ighm.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_2, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed") +
+  xlab("Distance from F2 border (µm)")
+
+```
+
+
+```{r NMF_3 as cluster}
+# 75th percentile
+nmf3.q75 <- quantile(nmf.df$NMF_3, probs = 0.75)
+nmf3.q75 <- unname(nmf3.q75)
+
+se.nmf$nmf_3 <- ifelse(nmf.se[, 3] >= nmf3.q75, "3", NA)
+
+nmf3.q75.pl <- MapLabels(se.nmf, column_name = "nmf_3", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+# 90th percentile
+nmf3.q90 <- quantile(nmf.df$NMF_3, probs = 0.90)
+nmf3.q90 <- unname(nmf3.q90)
+
+se.nmf$nmf_3 <- ifelse(nmf.se[, 3] >= nmf3.q90, "3", NA)
+
+nmf3.q90.pl <- MapLabels(se.nmf, column_name = "nmf_3", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2, colors = "#7570B3") +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+```{r radial distance NMF_3 q90}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "nmf_3", 
+                     selected_groups = "3", convert_to_microns = TRUE)
+
+se.nmf$r_dist_3_sqrt <- sign(se.nmf$r_dist_3)*sqrt(abs(se.nmf$r_dist_3))
+MapFeatures(se.nmf, features = "r_dist_3_sqrt", center_zero = TRUE, pt_size = 2,
+            colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+            override_plot_dims = TRUE)
+
+```
+
+radial distances are measured from cluster border
+positive distances: further away from cluster border
+negative distances: closer to / within cluster border
+
+```{r radial distance of light chain clones from NMF_3 q90}
+lchain <- c(igk.clones, igl.clones)
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = lchain)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(lchain), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "snow4") +
+  xlab("Distance from F3 border (µm)") + theme_classic(base_size = 12) + scale_color_brewer(palette = "Dark2", name = "clones") +
+  annotate("rect", xmax = 0, xmin = -Inf, ymax = Inf, ymin = -Inf, alpha = 0.3, fill = "ivory3") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05)))
+
+```
+
+```{r radial distance of heavy chain clones from NMF_3 q90}
+hchain <- c(igha.clones, ighg.clones)
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = hchain)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(hchain), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), se = F, linewidth = 1.2) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed", linewidth = 1, colour = "snow4") +
+  xlab("Distance from F3 border (µm)") + theme_classic() + scale_color_manual(values = c("#386CB0", "#6A3D9A", "#BF5B17", "#666666"), name = "clones") +
+  annotate("rect", xmax = 0, xmin = -Inf, ymax = Inf, ymin = -Inf, alpha = 0.3, fill = "ivory3") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05)))
+
+```
+
+
+```{r radial distance of IGK clones from NMF_3 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igk.clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(igk.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGL clones from NMF_3 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igl.clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(igl.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHG clones from NMF_3 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighg.clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(ighg.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHA clones from NMF_3 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igha.clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(igha.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHM clones from NMF_3 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighm.clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(ighm.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+
+```{r NMF_4 as cluster}
+# 75th percentile
+nmf4.q75 <- quantile(nmf.df$NMF_4, probs = 0.75)
+nmf4.q75 <- unname(nmf4.q75)
+
+se.nmf$nmf_4 <- ifelse(nmf.se[, 4] >= nmf4.q75, "4", NA)
+
+nmf4.q75.pl <- MapLabels(se.nmf, column_name = "nmf_4", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+# 90th percentile
+nmf4.q90 <- quantile(nmf.df$NMF_4, probs = 0.90)
+nmf4.q90 <- unname(nmf4.q90)
+
+se.nmf$nmf_4 <- ifelse(nmf.se[, 4] >= nmf4.q90, "4", NA)
+
+nmf4.q90.pl <- MapLabels(se.nmf, column_name = "nmf_4", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+```{r radial distance NMF_4 q90}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "nmf_4", 
+                     selected_groups = "4", convert_to_microns = TRUE)
+
+se.nmf$r_dist_4_sqrt <- sign(se.nmf$r_dist_4)*sqrt(abs(se.nmf$r_dist_4))
+MapFeatures(se.nmf, features = "r_dist_4_sqrt", center_zero = TRUE, pt_size = 2,
+            colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+            override_plot_dims = TRUE)
+
+```
+
+radial distances are measured from cluster border
+positive distances: further away from cluster border
+negative distances: closer to / within cluster border
+
+```{r radial distance of IGK clones from NMF_4 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igk.clones)) |> 
+  filter(r_dist_4 < 2e3) |> 
+  pivot_longer(all_of(igk.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_4, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGL clones from NMF_4 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igl.clones)) |> 
+  filter(r_dist_4 < 2e3) |> 
+  pivot_longer(all_of(igl.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_4, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHG clones from NMF_4 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighg.clones)) |> 
+  filter(r_dist_4 < 2e3) |> 
+  pivot_longer(all_of(ighg.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_4, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHA clones from NMF_4 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igha.clones)) |> 
+  filter(r_dist_4 < 2e3) |> 
+  pivot_longer(all_of(igha.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_4, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHM clones from NMF_4 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighm.clones)) |> 
+  filter(r_dist_4 < 2e3) |> 
+  pivot_longer(all_of(ighm.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_4, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r NMF_5 as cluster}
+# 90th percentile
+nmf5.q90 <- quantile(nmf.df$NMF_5, probs = 0.90)
+nmf5.q90 <- unname(nmf5.q90)
+
+se.nmf$nmf_5 <- ifelse(nmf.se[, 5] >= nmf5.q90, "5", NA)
+
+nmf5.q90.pl <- MapLabels(se.nmf, column_name = "nmf_5", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+```{r NMF_6 as cluster}
+# 90th percentile
+nmf6.q90 <- quantile(nmf.df$NMF_6, probs = 0.90)
+nmf6.q90 <- unname(nmf6.q90)
+
+se.nmf$nmf_6 <- ifelse(nmf.se[, 6] >= nmf6.q90, "6", NA)
+
+nmf6.q90.pl <- MapLabels(se.nmf, column_name = "nmf_6", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+
+```{r NMF_7 as cluster}
+# 75th percentile
+nmf7.q75 <- quantile(nmf.df$NMF_7, probs = 0.75)
+nmf7.q75 <- unname(nmf7.q75)
+
+se.nmf$nmf_7 <- ifelse(nmf.se[, 7] >= nmf7.q75, "7", NA)
+
+nmf7.q75.pl <- MapLabels(se.nmf, column_name = "nmf_7", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+# 90th percentile
+nmf7.q90 <- quantile(nmf.df$NMF_7, probs = 0.90)
+nmf7.q90 <- unname(nmf7.q90)
+
+se.nmf$nmf_7 <- ifelse(nmf.se[, 7] >= nmf7.q90, "7", NA)
+
+nmf7.q90.pl <- MapLabels(se.nmf, column_name = "nmf_7", override_plot_dims = TRUE, 
+                         image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+
+```
+
+```{r radial distance NMF_7 q90}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "nmf_7", 
+                     selected_groups = "7", convert_to_microns = TRUE)
+
+se.nmf$r_dist_7_sqrt <- sign(se.nmf$r_dist_7)*sqrt(abs(se.nmf$r_dist_4))
+MapFeatures(se.nmf, features = "r_dist_7_sqrt", center_zero = TRUE, pt_size = 2,
+            colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+            override_plot_dims = TRUE)
+
+```
+
+radial distances are measured from cluster border
+positive distances: further away from cluster border
+negative distances: closer to / within cluster border
+
+```{r radial distance of IGK clones from NMF_7 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igk.clones)) |> 
+  filter(r_dist_7 < 2e3) |> 
+  pivot_longer(all_of(igk.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_7, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGL clones from NMF_7 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igl.clones)) |> 
+  filter(r_dist_7 < 2e3) |> 
+  pivot_longer(all_of(igl.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_7, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHG clones from NMF_7 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighg.clones)) |> 
+  filter(r_dist_7 < 2e3) |> 
+  pivot_longer(all_of(ighg.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_7, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHA clones from NMF_7 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = igha.clones)) |> 
+  filter(r_dist_7 < 2e3) |> 
+  pivot_longer(all_of(igha.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_7, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r radial distance of IGHM clones from NMF_7 q90}
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = ighm.clones)) |> 
+  filter(r_dist_7 < 2e3) |> 
+  pivot_longer(all_of(ighm.clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_7, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+
+
+# Radial distances with Seurat clusters (not used )
+
+```{r seurat cluster 5}
+se.nmf$cluster_5 <- ifelse(se.nmf$seurat_clusters %in% "5", "5", NA)
+MapLabels(se.nmf, column_name = "cluster_5", override_plot_dims = TRUE, 
+          image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+```
+
+```{r radial distance cluster 5}
+DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "seurat_clusters", 
+                     selected_groups = "5", convert_to_microns = TRUE)
+
+# se.nmf$r_dist_5_sqrt <- sign(se.nmf$r_dist_5)*sqrt(abs(se.nmf$r_dist_5))
+# MapFeatures(se.nmf, features = "r_dist_5_sqrt", center_zero = TRUE, pt_size = 2, 
+#             colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+#             override_plot_dims = TRUE)
+
+```
+
+radial distances are measured from cluster border
+positive distances: further away from cluster border
+negative distances: closer to / within cluster border
+
+```{r radial distance of clones from cluster 5}
+sel_clones <- c("IGLclone8", "IGHGclone58", "IGKclone17")
+
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = sel_clones)) |> 
+  filter(r_dist_5 < 1e3) |> 
+  pivot_longer(all_of(sel_clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_5, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r plot distances of clones cluster 5, fig.width=10}
+# colour scheme
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+MapFeatures(SubsetSTData(se.nmf, expression = r_dist_5 < 1e3), 
+            features = sel_clones, override_plot_dims = TRUE, scale_alpha = TRUE,
+            image_use = "raw", pt_size = 2, colors = col_scale_genes)
+
+MapFeatures(SubsetSTData(se.nmf, expression = r_dist_5 > 1e3), 
+            features = sel_clones, override_plot_dims = TRUE, scale_alpha = TRUE,
+            image_use = "raw", pt_size = 2, colors = col_scale_genes)
+```
+
+```{r seurat cluster 3}
+se.nmf$cluster_3 <- ifelse(se.nmf$seurat_clusters %in% "3", "3", NA)
+MapLabels(se.nmf, column_name = "cluster_3", override_plot_dims = TRUE, 
+          image_use = "raw", drop_na = TRUE, pt_size = 2) +
+  theme(legend.position = "right") &
+  guides(fill = guide_legend(override.aes = list(size = 5), ncol = 2))
+```
+
+```{r radial distance cluster 3}
+# DefaultAssay(se.nmf) <- "Clone"
+
+se.nmf <- RadialDistance(se.nmf, column_name = "seurat_clusters", 
+                     selected_groups = "3", convert_to_microns = TRUE)
+
+# se.nmf$r_dist_5_sqrt <- sign(se.nmf$r_dist_5)*sqrt(abs(se.nmf$r_dist_5))
+# MapFeatures(se.nmf, features = "r_dist_5_sqrt", center_zero = TRUE, pt_size = 2, 
+#             colors = RColorBrewer::brewer.pal(n = 11, name = "RdBu") |> rev(),
+#             override_plot_dims = TRUE)
+
+```
+
+```{r radial distance of clones from cluster 3}
+# sel_clones <- c("IGLclone8", "IGHGclone58", "IGKclone17")
+
+se.nmf[[]] |> 
+  bind_cols(FetchData(se.nmf, vars = sel_clones)) |> 
+  filter(r_dist_3 < 2e3) |> 
+  pivot_longer(all_of(sel_clones), names_to = "variable", values_to = "value") |> 
+  ggplot(aes(r_dist_3, value, color = variable)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+    geom_vline(aes(xintercept = 0, color = "border"), linetype = "dashed")
+
+```
+
+```{r plot distances of clones cluster 5, fig.width=10}
+# colour scheme
+# col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+MapFeatures(SubsetSTData(se.nmf, expression = r_dist_3 < 1e3), 
+            features = sel_clones, override_plot_dims = TRUE, scale_alpha = TRUE,
+            image_use = "raw", pt_size = 2, colors = col_scale_genes)
+
+MapFeatures(SubsetSTData(se.nmf, expression = r_dist_3 > 1e3), 
+            features = sel_clones, override_plot_dims = TRUE, scale_alpha = TRUE,
+            image_use = "raw", pt_size = 2, colors = col_scale_genes)
+```
+
+```{r save seurat}
+write_rds(se.nmf, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_analysis_ctype.rds")
+
+se.nmf <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_analysis_ctype.rds")
+```
+
