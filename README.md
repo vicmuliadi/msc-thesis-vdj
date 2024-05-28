@@ -1,1 +1,1 @@
-# mscthesisvdj
+# msc-thesis-vdj
