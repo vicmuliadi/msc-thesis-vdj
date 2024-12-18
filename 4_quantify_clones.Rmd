@@ -1,0 +1,926 @@
+---
+title: "quantify clones"
+author: "Victoria Muliadi"
+date: "2024-04-13"
+output: html_document
+---
+
+Quantify total number of clones and clonal overlap between regions
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r load packages}
+library(tidyverse)
+library(VennDiagram)
+library(patchwork)
+library(corrplot)
+```
+
+## Load clone matrices
+```{r load clone matrices}
+# BCSA1 tum A
+clones.p1.a1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA1_A1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p1.a2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA1_A2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+
+# BCSA2 tum B, C, E
+clones.p2.b2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA2_B2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p2.c1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA2_C1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p2.e1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA2_E1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+
+# BCSA3 tum A, C, D
+clones.p3.a2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_A2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p3.c1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_C1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p3.c2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_C2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p3.d1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_D1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+clones.p3.d2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_D2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+
+```
+
+```{r filter clones with 0 UMI counts}
+# BCSA1
+umi.p1.a1 <- Matrix::rowSums(clones.p1.a1) > 0
+table(umi.p1.a1)
+clones.p1.a1 <- subset(clones.p1.a1, umi.p1.a1)
+
+umi.p1.a2 <- Matrix::rowSums(clones.p1.a2) > 0
+table(umi.p1.a2)
+clones.p1.a2 <- subset(clones.p1.a2, umi.p1.a2)
+
+# BCSA2
+umi.p2.b2 <- Matrix::rowSums(clones.p2.b2) > 0
+table(umi.p2.b2)
+clones.p2.b2 <- subset(clones.p2.b2, umi.p2.b2)
+
+umi.p2.c1 <- Matrix::rowSums(clones.p2.c1) > 0
+table(umi.p2.c1)
+clones.p2.c1 <- subset(clones.p2.c1, umi.p2.c1)
+
+umi.p2.e1 <- Matrix::rowSums(clones.p2.e1) > 0
+table(umi.p2.e1)
+clones.p2.e1 <- subset(clones.p2.e1, umi.p2.e1)
+
+# BCSA3
+umi.p3.a2 <- Matrix::rowSums(clones.p3.a2) > 0
+table(umi.p3.a2)
+clones.p3.a2 <- subset(clones.p3.a2, umi.p3.a2)
+
+umi.p3.c1 <- Matrix::rowSums(clones.p3.c1) > 0
+table(umi.p3.c1)
+clones.p3.c1 <- subset(clones.p3.c1, umi.p3.c1)
+
+umi.p3.c2 <- Matrix::rowSums(clones.p3.c2) > 0
+table(umi.p3.c2)
+clones.p3.c2 <- subset(clones.p3.c2, umi.p3.c2)
+
+umi.p3.d1 <- Matrix::rowSums(clones.p3.d1) > 0
+table(umi.p3.d1)
+clones.p3.d1 <- subset(clones.p3.d1, umi.p3.d1)
+
+umi.p3.d2 <- Matrix::rowSums(clones.p3.d2) > 0
+table(umi.p3.d2)
+clones.p3.d2 <- subset(clones.p3.d2, umi.p3.d2)
+
+```
+
+## Quantify total number of clones by chain (IG / TR)
+
+```{r region / patient info}
+reg.a1 <- "A1"
+reg.a2 <- "A2"
+reg.b2 <- "B2"
+reg.c1 <- "C1"
+reg.c2 <- "C2"
+reg.d1 <- "D1"
+reg.d2 <- "D2"
+reg.e1 <- "E1"
+
+p1 <- "BCSA1"
+p2 <- "BCSA2"
+p3 <- "BCSA3"
+
+old <- "Engblom et al. (2023)"
+current <- "current"
+
+```
+
+```{r total clones}
+
+# regular expressions:
+# . -> match any character after "IGH"
+# ? -> stop after the first match
+
+chain_igh <- "IGH.?"
+
+# BCSA1
+clone.counts.p1.a1 <- table(str_split_i(rownames(clones.p1.a1), pattern = "clone", i = 1))
+igh.counts.p1.a1 <- sum(clone.counts.p1.a1[grep(chain_igh, names(clone.counts.p1.a1))])
+
+df.p1.a1 <- data.frame(chain = names(clone.counts.p1.a1), counts = as.numeric(clone.counts.p1.a1)) %>% rbind(c("IGH", as.numeric(igh.counts.p1.a1))) %>% cbind(region = reg.a1, patient = p1, data = current) %>% mutate_at("counts", as.numeric)
+
+clone.counts.p1.a2 <- table(str_split_i(rownames(clones.p1.a2), pattern = "clone", i = 1))
+igh.counts.p1.a2 <- sum(clone.counts.p1.a2[grep(chain_igh, names(clone.counts.p1.a2))])
+
+df.p1.a2 <- data.frame(chain = names(clone.counts.p1.a2), counts = as.numeric(clone.counts.p1.a2)) %>% rbind(c("IGH", igh.counts.p1.a2)) %>% cbind(region = reg.a2, patient = p1, data = current) %>% mutate_at("counts", as.numeric)
+
+# BCSA2
+clone.counts.p2.b2 <- table(str_split_i(rownames(clones.p2.b2), pattern = "clone", i = 1))
+igh.counts.p2.b2 <- sum(clone.counts.p2.b2[grep(chain_igh, names(clone.counts.p2.b2))])
+
+df.p2.b2 <- data.frame(chain = names(clone.counts.p2.b2), counts = as.numeric(clone.counts.p2.b2)) %>% rbind(c("IGH", igh.counts.p2.b2)) %>% cbind(region = reg.b2, patient = p2, data = current) %>% mutate_at("counts", as.numeric)
+
+clone.counts.p2.c1 <- table(str_split_i(rownames(clones.p2.c1), pattern = "clone", i = 1))
+igh.counts.p2.c1 <- sum(clone.counts.p2.c1[grep(chain_igh, names(clone.counts.p2.c1))])
+
+df.p2.c1 <- data.frame(chain = names(clone.counts.p2.c1), counts = as.numeric(clone.counts.p2.c1)) %>% cbind(region = reg.c1, patient = p2, data = current)
+df.p2.c1$counts[df.p2.c1$chain == "IGH"] <- igh.counts.p2.c1
+df.p2.c1 <- df.p2.c1 %>% mutate_at("counts", as.numeric)
+
+clone.counts.p2.e1 <- table(str_split_i(rownames(clones.p2.e1), pattern = "clone", i = 1))
+igh.counts.p2.e1 <- sum(clone.counts.p2.e1[grep(chain_igh, names(clone.counts.p2.e1))])
+
+df.p2.e1 <- data.frame(chain = names(clone.counts.p2.e1), counts = as.numeric(clone.counts.p2.e1)) %>% cbind(region = reg.e1, patient = p2, data = current)
+df.p2.e1$counts[df.p2.e1$chain == "IGH"] <- igh.counts.p2.e1
+df.p2.e1 <- df.p2.e1 %>% mutate_at("counts", as.numeric)
+
+# BCSA3
+clone.counts.p3.a2 <- table(str_split_i(rownames(clones.p3.a2), pattern = "clone", i = 1))
+igh.counts.p3.a2 <- sum(clone.counts.p3.a2[grep(chain_igh, names(clone.counts.p3.a2))])
+
+df.p3.a2 <- data.frame(chain = names(clone.counts.p3.a2), counts = as.numeric(clone.counts.p3.a2)) %>% cbind(region = reg.a2, patient = p3, data = current)
+df.p3.a2$counts[df.p3.a2$chain == "IGH"] <- igh.counts.p3.a2
+df.p3.a2 <- df.p3.a2 %>% mutate_at("counts", as.numeric)
+
+clone.counts.p3.c1 <- table(str_split_i(rownames(clones.p3.c1), pattern = "clone", i = 1))
+igh.counts.p3.c1 <- sum(clone.counts.p3.c1[grep(chain_igh, names(clone.counts.p3.c1))])
+
+df.p3.c1 <- data.frame(chain = names(clone.counts.p3.c1), counts = as.numeric(clone.counts.p3.c1)) %>% cbind(region = reg.c1, patient = p3, data = current)
+df.p3.c1$counts[df.p3.c1$chain == "IGH"] <- igh.counts.p3.c1
+df.p3.c1 <- df.p3.c1 %>% mutate_at("counts", as.numeric)
+
+clone.counts.p3.c2 <- table(str_split_i(rownames(clones.p3.c2), pattern = "clone", i = 1))
+igh.counts.p3.c2 <- sum(clone.counts.p3.c2[grep(chain_igh, names(clone.counts.p3.c2))])
+
+df.p3.c2 <- data.frame(chain = names(clone.counts.p3.c2), counts = as.numeric(clone.counts.p3.c2)) %>% cbind(region = reg.c2, patient = p3, data = current)
+df.p3.c2$counts[df.p3.c2$chain == "IGH"] <- igh.counts.p3.c2
+df.p3.c2 <- df.p3.c2 %>% mutate_at("counts", as.numeric)
+
+clone.counts.p3.d1 <- table(str_split_i(rownames(clones.p3.d1), pattern = "clone", i = 1))
+igh.counts.p3.d1 <- sum(clone.counts.p3.d1[grep(chain_igh, names(clone.counts.p3.d1))])
+
+df.p3.d1 <- data.frame(chain = names(clone.counts.p3.d1), counts = as.numeric(clone.counts.p3.d1)) %>% cbind(region = reg.d1, patient = p3, data = current)
+df.p3.d1$counts[df.p3.d1$chain == "IGH"] <- igh.counts.p3.d1
+df.p3.d1 <- df.p3.d1 %>% mutate_at("counts", as.numeric)
+
+clone.counts.p3.d2 <- table(str_split_i(rownames(clones.p3.d2), pattern = "clone", i = 1))
+igh.counts.p3.d2 <- sum(clone.counts.p3.d2[grep(chain_igh, names(clone.counts.p3.d2))])
+
+df.p3.d2 <- data.frame(chain = names(clone.counts.p3.d2), counts = as.numeric(clone.counts.p3.d2)) %>% cbind(region = reg.d2, patient = p3, data = current)
+df.p3.d2$counts[df.p3.d2$chain == "IGH"] <- igh.counts.p3.d2
+df.p3.d2 <- df.p3.d2 %>% mutate_at("counts", as.numeric)
+
+# bind all dataframes
+df.all <- rbind(df.p1.a1, df.p1.a2, df.p2.b2, df.p2.c1, df.p2.e1, df.p3.a2, df.p3.c1, df.p3.c2, df.p3.d1, df.p3.d2)
+
+# save combined dataframe
+write_csv(df.all, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA_VDJ_chains_mixcr_updated.csv")
+
+```
+
+Publication data (Engblom et al. 2023 Science) downloaded from: https://zenodo.org/records/7961605
+
+```{r load clone data from publication}
+# BCSA2 / P1 in paper
+bcsa2.clone.all <- read_csv("C:/Users/victo/Downloads/SpatialVDJ_forZenodo/data/breast_cancer/1_LR-SpatialVDJ/clone_list/P1_all_ontissue_clone_list.csv")
+bcsa2.clone.list <- bcsa2.clone.all[, c("cloneId", "C2_UMI_count", "E2_UMI_count", "D1_UMI_count", "D2_UMI_count", "allJHitsWithScore", "allCHitsWithScore")]
+
+bcsa2.clone.list$chain <- str_split_i(bcsa2.clone.list$allCHitsWithScore, "C", 1)
+bcsa2.clone.list$chain <- str_split_i(bcsa2.clone.list$chain, "[1234]", 1)
+bcsa2.clone.list$chain <- str_split_i(bcsa2.clone.list$chain, "\\*", 1)
+
+# sanity check if V call and J call are the same
+# sum(str_sub(bcsa2.clone.all$allVHitsWithScore,1,3)!=str_sub(bcsa2.clone.all$allJHitsWithScore,1,3))
+
+# count clones without C call
+sum(is.na(bcsa2.clone.list$chain))
+
+# replace NA values in clone.names with J calls, else keep the existing chain name
+bcsa2.clone.list.new <- bcsa2.clone.list %>% mutate(chain = ifelse(is.na(chain), str_split_i(bcsa2.clone.list$allJHitsWithScore, "J", 1), chain))
+
+# count clones without C/J call
+sum(is.na(bcsa2.clone.list.new$chain))
+
+# save clone list
+# write_csv(bcsa2.clone.list.new, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/P1_BCSA2_all_clones.csv")
+
+# BCSA3 / P2
+bcsa3.clone.all <- read_csv("C:/Users/victo/Downloads/SpatialVDJ_forZenodo/data/breast_cancer/1_LR-SpatialVDJ/clone_list/P2_all_ontissue_clone_list.csv")
+bcsa3.clone.list <- bcsa3.clone.all[, c("cloneId", "A1_UMI_count", "B2_UMI_count", "allJHitsWithScore", "allCHitsWithScore")]
+
+bcsa3.clone.list$chain <- str_split_i(bcsa3.clone.list$allCHitsWithScore, "C", 1)
+bcsa3.clone.list$chain <- str_split_i(bcsa3.clone.list$chain, "[1234]", 1)
+bcsa3.clone.list$chain <- str_split_i(bcsa3.clone.list$chain, "\\*", 1)
+
+# sanity check if V call and J call are the same
+# sum(str_sub(bcsa3.clone.all$allVHitsWithScore,1,3)!=str_sub(bcsa3.clone.all$allJHitsWithScore,1,3))
+
+# count clones without C call
+sum(is.na(bcsa3.clone.list$chain))
+
+# replace NA values in clone.names with J calls, else keep the existing chain name
+bcsa3.clone.list.new <- bcsa3.clone.list %>% mutate(chain = ifelse(is.na(chain), str_split_i(bcsa3.clone.list$allJHitsWithScore, "J", 1), chain))
+
+# count clones without C/J call
+sum(is.na(bcsa3.clone.list.new$chain))
+
+# save clone list
+# write_csv(bcsa3.clone.list.new, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/P2_BCSA3_all_clones.csv")
+
+```
+
+```{r region / patient info for publication data}
+reg.a1 <- "A1"
+reg.b2 <- "B2"
+reg.c2 <- "C2"
+reg.d1 <- "D1"
+reg.d2 <- "D2"
+reg.e2 <- "E2"
+
+```
+
+```{r quantify clones from publication data}
+chain_igh <- "IGH.?"
+
+# keep clones with >=1 UMI count in each section
+# BCSA2
+bcsa2.c2 <- bcsa2.clone.list.new[bcsa2.clone.list.new$C2_UMI_count != 0, ]
+bcsa2.c2.counts <- table(bcsa2.c2$chain)
+bcsa2.c2.igh <- sum(bcsa2.c2.counts[grep(chain_igh, names(bcsa2.c2.counts))])
+
+df.bcsa2.c2 <- data.frame(chain = names(bcsa2.c2.counts), counts = as.numeric(bcsa2.c2.counts)) %>% cbind(region = reg.c2, patient = p2, data = old)
+df.bcsa2.c2$counts[df.bcsa2.c2$chain == "IGH"] <- bcsa2.c2.igh
+df.bcsa2.c2 <- df.bcsa2.c2 %>% mutate_at("counts", as.numeric)
+
+bcsa2.d1 <- bcsa2.clone.list.new[bcsa2.clone.list.new$D1_UMI_count != 0, ]
+bcsa2.d1.counts <- table(bcsa2.d1$chain)
+bcsa2.d1.igh <- sum(bcsa2.d1.counts[grep(chain_igh, names(bcsa2.d1.counts))])
+
+df.bcsa2.d1 <- data.frame(chain = names(bcsa2.d1.counts), counts = as.numeric(bcsa2.d1.counts)) %>% cbind(region = reg.d1, patient = p2, data = old)
+df.bcsa2.d1$counts[df.bcsa2.d1$chain == "IGH"] <- bcsa2.d1.igh
+df.bcsa2.d1 <- df.bcsa2.d1 %>% mutate_at("counts", as.numeric)
+
+bcsa2.d2 <- bcsa2.clone.list.new[bcsa2.clone.list.new$D2_UMI_count != 0, ]
+bcsa2.d2.counts <- table(bcsa2.d2$chain)
+bcsa2.d2.igh <- sum(bcsa2.d2.counts[grep(chain_igh, names(bcsa2.d2.counts))])
+
+df.bcsa2.d2 <- data.frame(chain = names(bcsa2.d2.counts), counts = as.numeric(bcsa2.d2.counts)) %>% cbind(region = reg.d2, patient = p2, data = old)
+df.bcsa2.d2$counts[df.bcsa2.d2$chain == "IGH"] <- bcsa2.d2.igh
+df.bcsa2.d2 <- df.bcsa2.d2 %>% mutate_at("counts", as.numeric)
+
+bcsa2.e2 <- bcsa2.clone.list.new[bcsa2.clone.list.new$E2_UMI_count != 0, ]
+bcsa2.e2.counts <- table(bcsa2.e2$chain)
+bcsa2.e2.igh <- sum(bcsa2.e2.counts[grep(chain_igh, names(bcsa2.e2.counts))])
+
+df.bcsa2.e2 <- data.frame(chain = names(bcsa2.e2.counts), counts = as.numeric(bcsa2.e2.counts)) %>% cbind(region = reg.e2, patient = p2, data = old)
+df.bcsa2.e2$counts[df.bcsa2.e2$chain == "IGH"] <- bcsa2.e2.igh
+df.bcsa2.e2 <- df.bcsa2.e2 %>% mutate_at("counts", as.numeric)
+
+# BCSA3
+bcsa3.a1 <- bcsa3.clone.list.new[bcsa3.clone.list.new$A1_UMI_count != 0, ]
+bcsa3.a1.counts <- table(bcsa3.a1$chain)
+bcsa3.a1.igh <- sum(bcsa3.a1.counts[grep(chain_igh, names(bcsa3.a1.counts))])
+
+df.bcsa3.a1 <- data.frame(chain = names(bcsa3.a1.counts), counts = as.numeric(bcsa3.a1.counts)) %>% cbind(region = reg.a1, patient = p3, data = old)
+df.bcsa3.a1$counts[df.bcsa3.a1$chain == "IGH"] <- bcsa3.a1.igh
+df.bcsa3.a1 <- df.bcsa3.a1 %>% mutate_at("counts", as.numeric)
+
+bcsa3.b2 <- bcsa3.clone.list.new[bcsa3.clone.list.new$B2_UMI_count != 0, ]
+bcsa3.b2.counts <- table(bcsa3.b2$chain)
+bcsa3.b2.igh <- sum(bcsa3.b2.counts[grep(chain_igh, names(bcsa3.b2.counts))])
+
+df.bcsa3.b2 <- data.frame(chain = names(bcsa3.b2.counts), counts = as.numeric(bcsa3.b2.counts)) %>% cbind(region = reg.b2, patient = p3, data = old)
+df.bcsa3.b2$counts[df.bcsa3.b2$chain == "IGH"] <- bcsa3.b2.igh
+df.bcsa3.b2 <- df.bcsa3.b2 %>% mutate_at("counts", as.numeric)
+
+df.bcsa3.b2 <- data.frame(chain = names(bcsa3.b2.counts), counts = as.numeric(bcsa3.b2.counts)) %>% rbind(c("IGH", bcsa3.b2.igh)) %>% cbind(region = reg.b2, patient = p3, data = old) %>% mutate_at("counts", as.numeric)
+
+# bind all dataframes
+df.old.all <- rbind(df.bcsa2.c2, df.bcsa2.d1, df.bcsa2.d2, df.bcsa2.e2, df.bcsa3.a1, df.bcsa3.b2)
+
+# save combined counts from old data
+write_csv(df.old.all, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA_VDJ_chains_mixcr_old_updated.csv")
+
+```
+
+
+```{r subset dataframe}
+# df.all <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA_VDJ_chains_mixcr.csv")
+
+# vdj.chains <- c("IGH", "IGK", "IGL", "TRA", "TRB", "TRD", "TRG")
+
+ig.chains <- c("IGH", "IGK", "IGL")
+
+igh.iso <- c("IGHA", "IGHD", "IGHE", "IGHG", "IGHM")
+
+tr.chains <- c("TRA", "TRB", "TRD", "TRG")
+
+con.patients <- c(p1, p3)
+
+con.regions <- c(reg.a1, reg.a2, reg.c1, reg.c2, reg.d1, reg.d2)
+
+# df.chains <- subset(df.all, chain %in% vdj.chains)
+
+df.ig <- subset(df.all, chain %in% ig.chains)
+
+df.tr <- subset(df.all, chain %in% tr.chains)
+
+df.iso <- subset(df.all, chain %in% igh.iso)
+
+df.igh <- subset(df.all, chain %in% "IGH") %>% subset(patient %in% con.patients) %>% subset(!(region %in% "A2" & patient %in% "BCSA3"))
+
+df.igk <- subset(df.all, chain %in% "IGK") %>% subset(patient %in% con.patients) %>% subset(!(region %in% "A2" & patient %in% "BCSA3"))
+
+df.igl <- subset(df.all, chain %in% "IGL") %>% subset(patient %in% con.patients) %>% subset(!(region %in% "A2" & patient %in% "BCSA3"))
+
+# df.trb <- subset(df.all, chain %in% "TRB") %>% subset(patient %in% con.patients) %>% subset(!(region %in% "A2" & patient %in% "BCSA3"))
+
+```
+
+```{r subset old data}
+df.old.ig <- subset(df.old.all, chain %in% ig.chains)
+
+df.old.tr <- subset(df.old.all, chain %in% tr.chains)
+
+df.old.iso <- subset(df.old.all, chain %in% igh.iso)
+```
+
+```{r merge old and new data}
+df.ig.merged <- rbind(df.ig, df.old.ig)
+
+df.tr.merged <- rbind(df.tr, df.old.tr)
+
+df.iso.merged <- rbind(df.iso, df.old.iso)
+
+```
+
+```{r plot all IG chains with publication data, fig.width=22}
+p.ig <- ggplot(data = df.ig.merged, aes(x = chain, y = counts, colour = patient, shape = data)) + geom_point(size = 12, position = position_dodge(width = 0.8)) + scale_color_brewer(palette = "Set2") + stat_summary(fun = median, aes(colour = patient), geom = "crossbar", position = position_dodge(width = 0.8)) + theme_classic(base_size = 40)
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_IG_chains_combined_mixcr_updated.png", width = 15, plot = p.ig)
+
+```
+
+```{r plot all TR chains with publication data v2, fig.width=15}
+ggplot(data = df.tr.merged, aes(x = chain, y = counts, colour = patient, shape = data)) + geom_point(size = 8, position = position_dodge(width = 0.8)) + scale_color_brewer(palette = "Set2") + stat_summary(fun = mean, aes(colour = patient), geom = "crossbar", position = position_dodge(width = 0.8)) + theme_classic(base_size = 25)
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_TR_chains_combined_mixcr_updated.png", width = 15)
+
+```
+
+```{r calculate isotype proportions}
+df.iso.prop <- df.iso.merged
+df.iso.prop$props <- c(0)
+df.igh.merged <- subset(df.ig.merged, chain %in% "IGH")
+
+for (pat in df.iso.prop$patient) {
+  for (reg in df.iso.prop$region) {
+    df.iso.prop$props[df.iso.prop$patient %in% pat & df.iso.prop$region %in% reg] <- df.iso.prop$counts[df.iso.prop$patient %in% pat & df.iso.prop$region %in% reg] / df.igh.merged$counts[df.igh.merged$patient %in% pat & df.igh.merged$region %in% reg] * 100
+    }
+  }
+
+df.iso.prop
+
+# save isotype proportions
+write_csv(df.iso.prop, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA_IGH_isotypes_combined_mixcr_updated.csv")
+
+```
+
+```{r plot all isotypes proportions with publication data, fig.width=22}
+p.iso <- ggplot(data = df.iso.prop, aes(x = chain, y = props, colour = patient, shape = data)) + geom_point(size = 12, position = position_dodge(width = 0.9)) + scale_color_brewer(palette = "Set2") + stat_summary(fun = median, aes(colour = patient), geom = "crossbar", position = position_dodge(width = 0.9)) + theme_classic(base_size = 40) + ylab("% of IGH counts") + xlab("IGH isotypes")
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_IGH_iso_props_combined_mixcr_updated.png", width = 15, plot = p.iso)
+
+```
+
+```{r combine clone count plots all regions, fig.width=22, fig.height=22}
+# merge legends together using plot_layout(guides = "collect")
+p.ig.combined <- p.ig / p.iso + plot_layout(guides = "collect")
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_IGH_plots_combined_mixcr.png", plot = p.ig.combined, width = 25, height = 25)
+
+```
+
+
+```{r shared IGH clones, fig.width=10}
+igh.shared <- ggplot(data = df.igh, aes(x = region, y = counts)) + geom_col(aes(fill = patient)) + scale_fill_manual(values = c("#66C2A5", "#8DA0CB")) + theme_classic(base_size = 25) + ylab("IGH counts") + scale_y_continuous(expand = expansion(mult = 0.01))
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_VDJ_IGH_shared_mixcr.png", width = 10)
+
+```
+
+```{r shared IGK clones, fig.width=10}
+igk.shared <- ggplot(data = df.igk, aes(x = region, y = counts)) + geom_col(aes(fill = patient)) + scale_fill_manual(values = c("#66C2A5", "#8DA0CB")) + theme_classic(base_size = 25) + ylab("IGK counts") + scale_y_continuous(expand = expansion(mult = 0.01))
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_VDJ_IGK_shared_mixcr.png", width = 10)
+
+```
+
+```{r shared IGL clones, fig.width=10}
+igl.shared <- ggplot(data = df.igl, aes(x = region, y = counts)) + geom_col(aes(fill = patient)) + scale_fill_manual(values = c("#66C2A5", "#8DA0CB")) + theme_classic(base_size = 25) + ylab("IGL counts") + scale_y_continuous(expand = expansion(mult = 0.01))
+
+ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA_VDJ_IGL_shared_mixcr.png", width = 10)
+
+```
+
+# Clone overlaps
+
+```{r get only IGH/IGK/IGL clones from matrices for consecutive sections and/or BCSA3}
+
+chain_igh <- "IGH.?"
+chain_igk <- "IGK."
+chain_igl <- "IGL."
+
+# BCSA1
+clone.name.p1.a1 <- rownames(clones.p1.a1)
+igh.name.p1.a1 <- clone.name.p1.a1[grep(chain_igh, clone.name.p1.a1)]
+igk.name.p1.a1 <- clone.name.p1.a1[grep(chain_igk, clone.name.p1.a1)]
+igl.name.p1.a1 <- clone.name.p1.a1[grep(chain_igl, clone.name.p1.a1)]
+
+clone.name.p1.a2 <- rownames(clones.p1.a2)
+igh.name.p1.a2 <- clone.name.p1.a2[grep(chain_igh, clone.name.p1.a2)]
+igk.name.p1.a2 <- clone.name.p1.a2[grep(chain_igk, clone.name.p1.a2)]
+igl.name.p1.a2 <- clone.name.p1.a2[grep(chain_igl, clone.name.p1.a2)]
+
+# BCSA3
+clone.name.p3.c1 <- rownames(clones.p3.c1)
+igh.name.p3.c1 <- clone.name.p3.c1[grep(chain_igh, clone.name.p3.c1)]
+igk.name.p3.c1 <- clone.name.p3.c1[grep(chain_igk, clone.name.p3.c1)]
+igl.name.p3.c1 <- clone.name.p3.c1[grep(chain_igl, clone.name.p3.c1)]
+
+clone.name.p3.c2 <- rownames(clones.p3.c2)
+igh.name.p3.c2 <- clone.name.p3.c2[grep(chain_igh, clone.name.p3.c2)]
+igk.name.p3.c2 <- clone.name.p3.c2[grep(chain_igk, clone.name.p3.c2)]
+igl.name.p3.c2 <- clone.name.p3.c2[grep(chain_igl, clone.name.p3.c2)]
+
+clone.name.p3.d1 <- rownames(clones.p3.d1)
+igh.name.p3.d1 <- clone.name.p3.d1[grep(chain_igh, clone.name.p3.d1)]
+igk.name.p3.d1 <- clone.name.p3.d1[grep(chain_igk, clone.name.p3.d1)]
+igl.name.p3.d1 <- clone.name.p3.d1[grep(chain_igl, clone.name.p3.d1)]
+
+clone.name.p3.d2 <- rownames(clones.p3.d2)
+igh.name.p3.d2 <- clone.name.p3.d2[grep(chain_igh, clone.name.p3.d2)]
+igk.name.p3.d2 <- clone.name.p3.d2[grep(chain_igk, clone.name.p3.d2)]
+igl.name.p3.d2 <- clone.name.p3.d2[grep(chain_igl, clone.name.p3.d2)]
+
+```
+
+# IGH overlap BCSA3
+```{r calculate % IGH overlaps BCSA3}
+
+igh.names.p3 <- list(C1 = igh.name.p3.c1, C2 = igh.name.p3.c2, D1 = igh.name.p3.d1, D2 = igh.name.p3.d2)
+
+igh.comb <- expand_grid(section_1 = c("C1", "C2", "D1", "D2"), section_2 = c("C1", "C2", "D1", "D2"))
+igh.comb$overlap <- c(0)
+
+for (i in 1:nrow(igh.comb)) {
+  sec.1 <- igh.comb$section_1[i]
+  sec.2 <- igh.comb$section_2[i]
+  
+  sec.1.names <- igh.names.p3[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igh.names.p3[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igh.comb$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igh.comb <- igh.comb %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igh.comb)) {
+  if (str_split_i(igh.comb$section_1[i], pattern = "", 1) == str_split_i(igh.comb$section_2[i], pattern = "", 1)) {
+    igh.comb$adjacent[i] <- "yes"
+  } else {
+    igh.comb$adjacent[i] <- "no"
+  }
+}
+
+```
+
+```{r create correlation matrix IGH BCSA3}
+
+igh.cor.df <- data.frame(matrix(vector(mode = "numeric"), nrow = 4, ncol = 4))
+colnames(igh.cor.df) <- c("C1", "C2", "D1", "D2")
+row.names(igh.cor.df) <- c("C1", "C2", "D1", "D2")
+
+for (i in 1:nrow(igh.comb)) {
+  sec.1 <- igh.comb$section_1[i]
+  sec.2 <- igh.comb$section_2[i]
+  
+  igh.cor.df[sec.1, sec.2] <- igh.comb$overlap[igh.comb$section_1 == sec.1 & igh.comb$section_2 == sec.2]
+}
+
+igh.cor.df
+
+# convert dataframe to matrix (corrplot function expects matrix as input)
+igh.cor.mtx <- as.matrix(igh.cor.df)
+
+```
+
+```{r plot correlation matrix IGH overlap BCSA3}
+# corrplot expects correlation matrix as default input (i.e. values range from -1 to +1)
+# to plot general / non-correlation matrix, set is.corr = FALSE
+
+# with principal diagonal
+corrplot(igh.cor.mtx, method = "color", col=colorRampPalette(c("#FFFCFC","#16244F","#16244F", "#16244F","#27408B","#F59889"))(200), is.corr = FALSE, addCoef.col = "black", tl.col = "black", type = "lower", outline = T)
+
+```
+
+IGH overlap BCSA1
+```{r calculate % IGH overlaps BCSA1}
+
+igh.names.p1 <- list(A1 = igh.name.p1.a1, A2 = igh.name.p1.a2)
+
+igh.comb.p1 <- expand_grid(section_1 = c("A1", "A2"), section_2 = c("A1", "A2"))
+igh.comb.p1$overlap <- c(0)
+
+for (i in 1:nrow(igh.comb.p1)) {
+  sec.1 <- igh.comb.p1$section_1[i]
+  sec.2 <- igh.comb.p1$section_2[i]
+  
+  sec.1.names <- igh.names.p1[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igh.names.p1[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igh.comb.p1$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igh.comb.p1 <- igh.comb.p1 %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igh.comb.p1)) {
+  if (str_split_i(igh.comb.p1$section_1[i], pattern = "", 1) == str_split_i(igh.comb.p1$section_2[i], pattern = "", 1)) {
+    igh.comb.p1$adjacent[i] <- "yes"
+  } else {
+    igh.comb.p1$adjacent[i] <- "no"
+  }
+}
+
+igh.comb.p1.sub <- subset(igh.comb.p1, igh.comb.p1$overlap != 100)
+
+igh.comb.p1.test <- igh.comb.p1.sub %>% distinct(overlap, .keep_all = TRUE)
+
+```
+
+```{r scatter plot of IGH overlap adjacent vs non adjacent}
+igh.comb.sub <- subset(igh.comb, igh.comb$overlap != 100)
+
+igh.comb.test <- igh.comb.sub %>% distinct(overlap, .keep_all = TRUE)
+
+igh.comb.new <- rbind(igh.comb.test, igh.comb.p1.test)
+
+igh.overlap.plot.pval <- ggplot(data = igh.comb.new, aes(x = adjacent, y = overlap, color = adjacent)) + geom_point(size = 5) + scale_color_manual(values = c("#6D9EC1", "#F59889"), guide = "none") + theme_classic(base_size = 20) + xlab("adjacent tissue sections") + ylab("% IGH clonal overlap") + stat_summary(fun = mean, aes(colour = adjacent), geom = "crossbar")
+
+# ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA3_IGH_overlap_pval_mixcr.png", width = 10, plot = igh.overlap.plot.pval)
+
+```
+
+# IGK overlap BCSA3
+```{r calculate % IGK overlaps BCSA3}
+
+igk.names.p3 <- list(C1 = igk.name.p3.c1, C2 = igk.name.p3.c2, D1 = igk.name.p3.d1, D2 = igk.name.p3.d2)
+
+igk.comb <- expand_grid(section_1 = c("C1", "C2", "D1", "D2"), section_2 = c("C1", "C2", "D1", "D2"))
+igk.comb$overlap <- c(0)
+
+for (i in 1:nrow(igk.comb)) {
+  sec.1 <- igk.comb$section_1[i]
+  sec.2 <- igk.comb$section_2[i]
+  
+  sec.1.names <- igk.names.p3[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igk.names.p3[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igk.comb$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igk.comb <- igk.comb %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igk.comb)) {
+  if (str_split_i(igk.comb$section_1[i], pattern = "", 1) == str_split_i(igk.comb$section_2[i], pattern = "", 1)) {
+    igk.comb$adjacent[i] <- "yes"
+  } else {
+    igk.comb$adjacent[i] <- "no"
+  }
+}
+
+```
+
+```{r create correlation matrix IGK BCSA3}
+
+igk.cor.df <- data.frame(matrix(vector(mode = "numeric"), nrow = 4, ncol = 4))
+colnames(igk.cor.df) <- c("C1", "C2", "D1", "D2")
+row.names(igk.cor.df) <- c("C1", "C2", "D1", "D2")
+
+for (i in 1:nrow(igk.comb)) {
+  sec.1 <- igk.comb$section_1[i]
+  sec.2 <- igk.comb$section_2[i]
+  
+  igk.cor.df[sec.1, sec.2] <- igk.comb$overlap[igk.comb$section_1 == sec.1 & igk.comb$section_2 == sec.2]
+}
+
+igk.cor.df
+
+# convert dataframe to matrix (corrplot function expects matrix as input)
+igk.cor.mtx <- as.matrix(igk.cor.df)
+
+```
+
+```{r plot correlation matrix IGK overlap BCSA3}
+# corrplot expects correlation matrix as default input (i.e. values range from -1 to +1)
+# to plot general / non-correlation matrix, set is.corr = FALSE
+
+# with principal diagonal
+corrplot(igk.cor.mtx, method = "color", col=colorRampPalette(c("#FFFCFC","#16244F","#16244F", "#16244F","#27408B","#F59889"))(200), is.corr = FALSE, addCoef.col = "black", tl.col = "black", type = "lower",outline = T)
+
+```
+
+IGK overlap BCSA1
+```{r calculate % IGK overlaps BCSA1}
+
+igk.names.p1 <- list(A1 = igk.name.p1.a1, A2 = igk.name.p1.a2)
+
+igk.comb.p1 <- expand_grid(section_1 = c("A1", "A2"), section_2 = c("A1", "A2"))
+igk.comb.p1$overlap <- c(0)
+
+for (i in 1:nrow(igk.comb.p1)) {
+  sec.1 <- igk.comb.p1$section_1[i]
+  sec.2 <- igk.comb.p1$section_2[i]
+  
+  sec.1.names <- igk.names.p1[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igk.names.p1[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igk.comb.p1$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igk.comb.p1 <- igk.comb.p1 %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igk.comb.p1)) {
+  if (str_split_i(igk.comb.p1$section_1[i], pattern = "", 1) == str_split_i(igk.comb.p1$section_2[i], pattern = "", 1)) {
+    igk.comb.p1$adjacent[i] <- "yes"
+  } else {
+    igk.comb.p1$adjacent[i] <- "no"
+  }
+}
+
+igk.comb.p1.sub <- subset(igk.comb.p1, igk.comb.p1$overlap != 100)
+
+igk.comb.p1.test <- igk.comb.p1.sub %>% distinct(overlap, .keep_all = TRUE)
+
+```
+
+```{r scatter plot of IGK overlap adjacent vs non adjacent}
+igk.comb.sub <- subset(igk.comb, igk.comb$overlap != 100)
+
+igk.comb.test <- igk.comb.sub %>% distinct(overlap, .keep_all = TRUE)
+
+igk.comb.new <- rbind(igk.comb.test, igk.comb.p1.test)
+
+igk.overlap.plot.pval <- ggplot(data = igk.comb.new, aes(x = adjacent, y = overlap, color = adjacent)) + geom_point(size = 5) + scale_color_manual(values = c("#6D9EC1", "#F59889"), guide = "none") + theme_classic(base_size = 20) + xlab("adjacent tissue sections") + ylab("% IGK clonal overlap") + stat_summary(fun = mean, aes(colour = adjacent), geom = "crossbar")
+
+# ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA3_IGK_overlap_pval_mixcr.png", width = 10, plot = igk.overlap.plot.pval)
+
+```
+
+# IGL overlap BCSA3
+```{r calculate % IGL overlaps BCSA3}
+
+igl.names.p3 <- list(C1 = igl.name.p3.c1, C2 = igl.name.p3.c2, D1 = igl.name.p3.d1, D2 = igl.name.p3.d2)
+
+igl.comb <- expand_grid(section_1 = c("C1", "C2", "D1", "D2"), section_2 = c("C1", "C2", "D1", "D2"))
+igl.comb$overlap <- c(0)
+
+for (i in 1:nrow(igl.comb)) {
+  sec.1 <- igl.comb$section_1[i]
+  sec.2 <- igl.comb$section_2[i]
+  
+  sec.1.names <- igl.names.p3[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igl.names.p3[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igl.comb$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igl.comb <- igl.comb %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igl.comb)) {
+  if (str_split_i(igl.comb$section_1[i], pattern = "", 1) == str_split_i(igl.comb$section_2[i], pattern = "", 1)) {
+    igl.comb$adjacent[i] <- "yes"
+  } else {
+    igl.comb$adjacent[i] <- "no"
+  }
+}
+
+```
+
+IGL overlap BCSA1
+```{r calculate % IGL overlaps BCSA1}
+
+igl.names.p1 <- list(A1 = igl.name.p1.a1, A2 = igl.name.p1.a2)
+
+igl.comb.p1 <- expand_grid(section_1 = c("A1", "A2"), section_2 = c("A1", "A2"))
+igl.comb.p1$overlap <- c(0)
+
+for (i in 1:nrow(igl.comb.p1)) {
+  sec.1 <- igl.comb.p1$section_1[i]
+  sec.2 <- igl.comb.p1$section_2[i]
+  
+  sec.1.names <- igl.names.p1[[sec.1]]
+  sec.1.val <- length(sec.1.names)
+  sec.2.names <- igl.names.p1[[sec.2]]
+  sec.2.val <- length(sec.2.names)
+  
+  overlap.val <- length(intersect(sec.1.names, sec.2.names))
+  overlap.perc <- overlap.val / (sec.1.val + sec.2.val - overlap.val) * 100
+  
+  igl.comb.p1$overlap[i] <- format(round(overlap.perc, 2), nsmall = 2)
+
+}
+
+igl.comb.p1 <- igl.comb.p1 %>% mutate_at("overlap", as.numeric)
+
+# sort adjacent vs non-adjacent sections
+for (i in 1:nrow(igl.comb.p1)) {
+  if (str_split_i(igl.comb.p1$section_1[i], pattern = "", 1) == str_split_i(igl.comb.p1$section_2[i], pattern = "", 1)) {
+    igl.comb.p1$adjacent[i] <- "yes"
+  } else {
+    igl.comb.p1$adjacent[i] <- "no"
+  }
+}
+
+igl.comb.p1.sub <- subset(igl.comb.p1, igl.comb.p1$overlap != 100)
+
+igl.comb.p1.test <- igl.comb.p1.sub %>% distinct(overlap, .keep_all = TRUE)
+
+```
+
+```{r create correlation matrix IGL BCSA3}
+
+igl.cor.df <- data.frame(matrix(vector(mode = "numeric"), nrow = 4, ncol = 4))
+colnames(igl.cor.df) <- c("C1", "C2", "D1", "D2")
+row.names(igl.cor.df) <- c("C1", "C2", "D1", "D2")
+
+for (i in 1:nrow(igl.comb)) {
+  sec.1 <- igl.comb$section_1[i]
+  sec.2 <- igl.comb$section_2[i]
+  
+  igl.cor.df[sec.1, sec.2] <- igl.comb$overlap[igl.comb$section_1 == sec.1 & igl.comb$section_2 == sec.2]
+}
+
+igl.cor.df
+
+# convert dataframe to matrix (corrplot function expects matrix as input)
+igl.cor.mtx <- as.matrix(igl.cor.df)
+
+```
+
+```{r plot correlation matrix IGL overlap BCSA3}
+# corrplot expects correlation matrix as default input (i.e. values range from -1 to +1)
+# to plot general / non-correlation matrix, set is.corr = FALSE
+
+# with principal diagonal
+corrplot(igl.cor.mtx, method = "color", col=colorRampPalette(c("#FFFCFC","#16244F","#16244F", "#16244F","#27408B","#F59889"))(200), is.corr = FALSE, addCoef.col = "black", tl.col = "black", type = "lower", outline = T)
+
+```
+
+```{r scatter plot of IGL overlap adjacent vs non adjacent}
+igl.comb.sub <- subset(igl.comb, igl.comb$overlap != 100)
+
+igl.comb.test <- igl.comb.sub %>% distinct(overlap, .keep_all = TRUE)
+
+igl.comb.new <- rbind(igl.comb.test, igl.comb.p1.test)
+
+igl.overlap.plot.pval <- ggplot(data = igl.comb.new, aes(x = adjacent, y = overlap, color = adjacent)) + geom_point(size = 5) + scale_color_manual(values = c("#6D9EC1", "#F59889"), guide = "none") + theme_classic(base_size = 20) + xlab("adjacent tissue sections") + ylab("% IGL clonal overlap") + stat_summary(fun = mean, aes(colour = adjacent), geom = "crossbar")
+
+# ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA3_IGL_overlap_pval_mixcr.png", width = 10, plot = igl.overlap.plot.pval)
+
+```
+
+# Venn diagrams
+```{r plot IGH clone overlaps}
+# BCSA1
+venn.diagram(x = list(igh.name.p1.a1, igh.name.p1.a2), category.names = c("A1", "A2"), filename = "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA1_regA_IGH_percent_overlap_mixcr.png", print.mode = c("raw", "percent"), output = T,
+  
+  imagetype="png" ,
+  height = 500 , 
+  width = 500 , 
+  resolution = 300,
+  compression = "lzw",
+  # Circles
+  lwd = 2,
+  lty = 'blank',
+  fill = c("darkseagreen", "orchid4"),
+  
+  # Numbers
+  cex = .6,
+  fontface = "bold",
+  fontfamily = "sans",
+  cat.cex = 0.6,
+  cat.fontface = "bold",
+  cat.fontfamily = "sans",
+  cat.pos = c(0,0))
+
+```
+
+```{r plot IGK clone overlaps}
+# BCSA1
+venn.diagram(x = list(igk.name.p1.a1, igk.name.p1.a2), category.names = c("A1", "A2"), filename = "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA1_regA_IGK_percent_overlap_mixcr.png", print.mode = c("raw", "percent"), output = T,
+  
+  imagetype="png" ,
+  height = 500 , 
+  width = 500 , 
+  resolution = 300,
+  compression = "lzw",
+  # Circles
+  lwd = 2,
+  lty = 'blank',
+  fill = c("darkseagreen", "orchid4"),
+  
+  # Numbers
+  cex = .6,
+  fontface = "bold",
+  fontfamily = "sans",
+  cat.cex = 0.6,
+  cat.fontface = "bold",
+  cat.fontfamily = "sans",
+  cat.pos = c(0,0))
+
+```
+
+```{r plot IGL clone overlaps}
+# BCSA1
+venn.diagram(x = list(igl.name.p1.a1, igl.name.p1.a2), category.names = c("A1", "A2"), filename = "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/clone_quantification/BCSA1_regA_IGL_percent_overlap_mixcr.png", print.mode = c("raw", "percent"), output = T,
+  
+  imagetype="png" ,
+  height = 500 , 
+  width = 500 , 
+  resolution = 300,
+  compression = "lzw",
+  # Circles
+  lwd = 2,
+  lty = 'blank',
+  fill = c("darkseagreen", "orchid4"),
+  
+  # Numbers
+  cex = .6,
+  fontface = "bold",
+  fontfamily = "sans",
+  cat.cex = 0.6,
+  cat.fontface = "bold",
+  cat.fontfamily = "sans",
+  cat.pos = c(0,0))
+
+```
+
+## Session information
+
+```{r session info}
+sessionInfo()
+```
+
+
+
+
+
+
+

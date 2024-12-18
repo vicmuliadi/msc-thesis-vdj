@@ -1,0 +1,104 @@
+---
+title: "format spatial GEX data (semla)"
+author: "Victoria Muliadi"
+date: "2024-04-12"
+output: html_document
+---
+
+Preprocess spatial GEX data and create Seurat object using 'semla' package (https://ludvigla.github.io/semla/)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r load packages}
+library(semla)
+library(readr)
+```
+
+## Load spatial GEX data as Seurat object
+
+```{r load spatial gex data}
+
+root.path <- "C:/Users/victo/Downloads/BC_spaceranger/"
+
+visium_id <- "V19T26-032_A1"
+tumor_area <- "BC-SA3-D"
+section <- "D2"
+
+feature.matrix.path <- "/filtered_feature_bc_matrix.h5"
+spotfile.path <- "/spatial/tissue_positions_list.csv"
+img.path <- "/spatial/tissue_hires_image.png"
+json.path <- "/spatial/scalefactors_json.json"
+
+samples <- paste0(root.path, visium_id, feature.matrix.path)
+imgs <- paste0(root.path, visium_id, img.path)
+spotfiles <- paste0(root.path, visium_id, spotfile.path)
+json <- paste0(root.path, visium_id, json.path)
+
+infoTable <- tibble(samples, imgs, spotfiles, json,
+                    visium_id, tumor_area, section)
+
+se <- ReadVisiumData(infoTable)
+
+```
+
+## Subset data to remove genes and spots with low expression
+
+Criteria used in this example:
+- each spot should have at least 500 UMI counts
+- each gene should have at least 100 UMI counts and be expressed in at least 5 spots in the dataset
+- remove mitochondrial and ribosomal genes + MALAT1 (long non-coding RNA)
+
+```{r subset genes and spots}
+# nCount: UMI (for columns / spots)
+# nFeature: gene (for columns / spots)
+
+## criteria:
+# spots (columns): >= 500 UMI counts
+
+keep.spots <- colnames(se)[se$nCount_Spatial >= 500]
+
+# genes (rows): >= 100 UMI counts + expressed in >= 5 spots in dataset
+# total expression / UMI count for the gene across all spots:
+nCount.UMI <- Matrix::rowSums(GetAssayData(se))
+
+# number of spots where gene is observed:
+nObs.genes <- Matrix::rowSums(GetAssayData(se) > 0)
+
+keep.genes <- rownames(se)[nCount.UMI >= 100 & nObs.genes >= 5]
+
+## filter mitochondrial and ribosomal genes + MALAT1 (lncRNA)
+keep.genes <- keep.genes[!grepl("MALAT1", keep.genes)]
+keep.genes <- keep.genes[!grepl("^(MT-|RPL|RPS)", keep.genes)]
+
+# subset
+se <- SubsetSTData(se, spots = keep.spots, features = keep.genes)
+```
+
+
+## Load H&E images
+
+```{r load H&E images}
+se <- LoadImages(se)
+
+ImagePlot(se)
+
+```
+
+## Save Seurat object as RDS file
+
+```{r save seurat object}
+write_rds(se, "C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD.rds")
+
+```
+
+## Session information
+
+```{r session info}
+sessionInfo()
+```
+
+

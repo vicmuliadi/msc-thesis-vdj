@@ -1,0 +1,350 @@
+---
+title: "plot clones on spatial GEX data (semla)"
+author: "Victoria Muliadi"
+date: "2024-04-12"
+output: html_document
+---
+
+Plot IG / TR clones on spatial GEX data using 'semla' package (https://ludvigla.github.io/semla/)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r load packages}
+library(semla)
+library(tidyverse)
+```
+
+## Load Seurat object (spots filtered + clonal data added)
+
+```{r load seurat object}
+se <- read_rds("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_tumD_clones_mixcr.rds")
+
+```
+
+## Quantify most abundant clones (by UMI counts)
+
+Note: if using Seurat object for quantification, use GetAssayData() to get count matrix information
+
+```{r most abundant clones from count matrices}
+
+# load clone matrices
+# clones.p3.d1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_D1_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+# clones.p3.d2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_D2_clone_matrix_mixcr.csv") %>% dplyr::rename(clone_name = ...1) %>% column_to_rownames(var = "clone_name")
+
+# total UMI counts of each clone for each region
+# region 1
+UMI.count.clones.p3.d1 <- Matrix::rowSums(clones.p3.d1)
+top.clones.p3.d1 <- names(head(sort(UMI.count.clones.p3.d1, decreasing = TRUE), n = 10))
+
+# region 2
+UMI.count.clones.p3.d2 <- Matrix::rowSums(clones.p3.d2)
+top.clones.p3.d2 <- names(head(sort(UMI.count.clones.p3.d2, decreasing = TRUE), n = 10))
+
+```
+
+```{r most abundant IGK}
+# select IGK clones
+chain_igk <- "IGK."
+igk.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_igk, names(UMI.count.clones.p3.d1))]
+igk.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_igk, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(igk.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(igk.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.igk.p3.d1 <- names(head(sort(igk.counts.p3.d1, decreasing = TRUE), n = 10))
+top.igk.p3.d2 <- names(head(sort(igk.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.igk.p3.d <- intersect(top.igk.p3.d1, top.igk.p3.d2)
+
+```
+
+```{r most abundant IGL}
+# select IGL clones
+chain_igl <- "IGL."
+igl.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_igl, names(UMI.count.clones.p3.d1))]
+igl.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_igl, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(igl.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(igl.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.igl.p3.d1 <- names(head(sort(igl.counts.p3.d1, decreasing = TRUE), n = 10))
+top.igl.p3.d2 <- names(head(sort(igl.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.igl.p3.d <- intersect(top.igl.p3.d1, top.igl.p3.d2)
+
+```
+
+```{r most abundant IGH}
+# select IGH clones
+chain_igh <- "IGH."
+igh.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_igh, names(UMI.count.clones.p3.d1))]
+igh.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_igh, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(igh.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(igh.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.igh.p3.d1 <- names(head(sort(igh.counts.p3.d1, decreasing = TRUE), n = 10))
+top.igh.p3.d2 <- names(head(sort(igh.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.igh.p3.d <- intersect(top.igh.p3.d1, top.igh.p3.d2)
+```
+
+```{r most abundant IGHA}
+# select IGHA clones
+chain_igha <- "IGHA."
+igha.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_igha, names(UMI.count.clones.p3.d1))]
+igha.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_igha, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(igha.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(igha.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.igha.p3.d1 <- names(head(sort(igha.counts.p3.d1, decreasing = TRUE), n = 10))
+top.igha.p3.d2 <- names(head(sort(igha.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.igha.p3.d <- intersect(top.igha.p3.d1, top.igha.p3.d2)
+```
+
+```{r most abundant IGHG}
+# select IGHG clones
+chain_ighg <- "IGHG."
+ighg.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_ighg, names(UMI.count.clones.p3.d1))]
+ighg.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_ighg, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(ighg.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(ighg.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.ighg.p3.d1 <- names(head(sort(ighg.counts.p3.d1, decreasing = TRUE), n = 10))
+top.ighg.p3.d2 <- names(head(sort(ighg.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.ighg.p3.d <- intersect(top.ighg.p3.d1, top.ighg.p3.d2)
+```
+
+```{r most abundant IGHM}
+# select IGHM clones
+chain_ighm <- "IGHM."
+ighm.counts.p3.d1 <- UMI.count.clones.p3.d1[grep(chain_ighm, names(UMI.count.clones.p3.d1))]
+ighm.counts.p3.d2 <- UMI.count.clones.p3.d2[grep(chain_ighm, names(UMI.count.clones.p3.d2))]
+
+# 10 clones with highest UMI counts
+head(sort(ighm.counts.p3.d1, decreasing = TRUE), n = 10)
+head(sort(ighm.counts.p3.d2, decreasing = TRUE), n = 10)
+
+# top 10 clone names
+top.ighm.p3.d1 <- names(head(sort(ighm.counts.p3.d1, decreasing = TRUE), n = 10))
+top.ighm.p3.d2 <- names(head(sort(ighm.counts.p3.d2, decreasing = TRUE), n = 10))
+
+# common top clones
+shared.ighm.p3.d <- intersect(top.ighm.p3.d1, top.ighm.p3.d2)
+```
+
+
+## Set UMI cutoff for clones
+
+```{r umi cutoff clones}
+
+# set default assay as "Clone"
+DefaultAssay(se) <- "Clone"
+
+# set UMI cutoff >= 1
+clone.UMI.1 <- GetAssayData(se) > 0
+
+se[["Clone.UMI.1"]] <- CreateAssayObject(clone.UMI.1)
+
+# plot UMI cutoff >= 1
+DefaultAssay(se) <- "Clone.UMI.1"
+
+```
+
+# Plot shared clones
+
+```{r plot shared IGK clones, fig.width=10}
+# colour scheme
+col_scale_genes <- paletteer::paletteer_c("grDevices::Oslo", 30)
+
+# load H&E images
+se <- LoadImages(se)
+
+# plot clones
+
+for (clone in shared.igk.p3.d) {
+  p <- MapFeatures(se, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/common_top_clones/BCSA3/","BCSA3_tumD_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r plot shared IGL clones, fig.width=10}
+for (clone in shared.igl.p3.d) {
+  p <- MapFeatures(se, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/common_top_clones/BCSA3/","BCSA3_tumD_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r plot shared IGHA clones, fig.width=10}
+for (clone in shared.igha.p3.d) {
+  p <- MapFeatures(se, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/common_top_clones/BCSA3/","BCSA3_tumD_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r plot shared IGHG clones, fig.width=10}
+for (clone in shared.ighg.p3.d) {
+  p <- MapFeatures(se, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/common_top_clones/BCSA3/","BCSA3_tumD_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r plot shared IGHM clones, fig.width=10}
+for (clone in shared.ighm.p3.d) {
+  p <- MapFeatures(se, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/common_top_clones/BCSA3/","BCSA3_tumD_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+## Shared clones (CDR3)
+
+```{r shared CDR3 with old data on BCSA3 region A}
+# load clone list for BCSA3
+# clone.names.cdr3.new <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_MiXCR_clones.csv")
+
+head(clone.names.cdr3.new)
+
+# IGHMclone0
+shared.igm.a2 <- clone.names.cdr3.new$clone_name[clone.names.cdr3.new$junction == "TGTGCGAAAGATATGAGTTATTACCTGAACGGTATGGACGTCTGG"]
+
+# IGLCclone1
+shared.igl1.a2 <- clone.names.cdr3.new$clone_name[clone.names.cdr3.new$junction == "TGTGCAGCATGGGATGACAGCCTGAGTGCTTATGTCTTC"]
+
+# IGLCclone6
+shared.igl2.a2 <- clone.names.cdr3.new$clone_name[clone.names.cdr3.new$junction == "TGTCAGGCGTGGGACAGCAGCACTGTGGTATTC"]
+
+# IGLCclone39
+shared.igl3.a2 <- clone.names.cdr3.new$clone_name[clone.names.cdr3.new$junction == "TGTCAAGCGTGGGACAGCAGCACAGGGGTATTC"]
+
+# combine all shared clones
+shared.all.a2 <- c(shared.igm.a2, shared.igl1.a2, shared.igl2.a2, shared.igl3.a2)
+
+```
+
+```{r plot shared clones BCSA3 reg A2, fig.width=10}
+# set default assay as "Clone"
+DefaultAssay(se.a2) <- "Clone"
+
+# set UMI cutoff >= 1
+clone.UMI.1 <- GetAssayData(se.a2) > 0
+
+se.a2[["Clone.UMI.1"]] <- CreateAssayObject(clone.UMI.1)
+
+# plot UMI cutoff >= 1
+DefaultAssay(se.a2) <- "Clone.UMI.1"
+
+# load images
+se.a2 <- LoadImages(se.a2)
+
+# plot shared clones
+for (clone in shared.all.a2) {
+  p <- MapFeatures(se.a2, features = clone, image_use = "raw", pt_size = 1.0, slot = "counts", arrange_features = "row", colors = col_scale_genes, scale_alpha = TRUE, pt_stroke = 0.5)
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/shared_clones/BCSA3/","BCSA3_tumA_", clone, ".png"), plot = p, width = 10, units = "in")
+}
+
+```
+
+```{r BCSA3 reg A clones from old data, fig.width=10, fig.height=10}
+library(STutility)
+library(readr)
+
+se.p2 <- read_rds("C:/Users/victo/Downloads/SpatialVDJ_forZenodo/data/breast_cancer/0_integrated/P2/BC_P2_PartIII.rds")
+
+ImagePlot(se.p2)
+
+# set UMI cutoff >= 1
+clone.UMI.1 <- GetAssayData(se.p2) > 0
+
+se.p2[["Clone.UMI.1"]] <- CreateAssayObject(clone.UMI.1)
+
+# plot UMI cutoff >= 1
+DefaultAssay(se.p2) <- "Clone.UMI.1"
+
+FeatureOverlay(se.p2, features = "IGLCclone1", sampleids = 1, pt.size = 2.5, add.alpha = T, cols = c("white", "blue"))
+
+# ggsave("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/shared_clones/BCSA3/BCSA3_tumA1_IGLCclone1.png", width = 10, height = 10)
+
+shared.clones <- c("IGHMclone0", "IGLCclone6", "IGLCclone39", "IGLCclone1")
+
+for (clone in shared.clones) {
+  p <- FeatureOverlay(se.p2, features = clone, sampleids = 1, pt.size = 2.5, add.alpha = T, cols = c("white", "blue"))
+  print(p)
+  ggsave(filename = paste0("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/shared_clones/BCSA3/","BCSA3_tumA1_", clone, ".png"), plot = p, width = 10, height = 10, units = "in")
+}
+
+```
+
+```{r shared CDR3 between patients}
+# load clone list
+# BCSA1
+clone.names.p1 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA1_MiXCR_clones.csv")
+# BCSA2
+clone.names.p2 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA2_MiXCR_clones.csv")
+# BCSA3
+clone.names.p3 <- read_csv("C:/Users/victo/Downloads/spatialVDJ/scripts/sample_analysis/BCSA3_MiXCR_clones.csv")
+
+# shared clones (using junction nucleotide sequence)
+common.cdr3 <- Reduce(intersect, list(clone.names.p1$junction, clone.names.p2$junction, clone.names.p3$junction))
+
+shared.cdr3.p1 <- clone.names.p1$clone_name[clone.names.p1$junction %in% common.cdr3] # IGKclone26  : TGTCAACAGAGTTACAGTACCCCGTACACTTTT
+shared.cdr3.p2 <- clone.names.p2$clone_name[clone.names.p2$junction %in% common.cdr3] # IGKclone1609: TGTCAACAGAGTTACAGTACCCCGTACACTTTT
+shared.cdr3.p3 <- clone.names.p3$clone_name[clone.names.p3$junction %in% common.cdr3] # IGKclone1373: TGTCAACAGAGTTACAGTACCCCGTACACTTTT
+
+# shared clones (using CDR3 nucleotide sequence)
+common.cdr3.test <- Reduce(intersect, list(clone.names.p1$cdr3, clone.names.p2$cdr3, clone.names.p3$cdr3))
+
+shared.cdr3.t.p1 <- clone.names.p1$clone_name[clone.names.p1$cdr3 %in% common.cdr3.test] # CAACAGAGTTACAGT............ACCCCGTACACT
+shared.cdr3.t.p2 <- clone.names.p2$clone_name[clone.names.p2$cdr3 %in% common.cdr3.test] # CAACAGAGTTACAGT............ACCCCGTACACT
+shared.cdr3.t.p3 <- clone.names.p3$clone_name[clone.names.p3$cdr3 %in% common.cdr3.test] # CAACAGAGTTACAGT............ACCCCGTACACT
+
+# shared clones (using CDR3 amino acid sequence)
+common.cdr3.aa <- Reduce(intersect, list(clone.names.p1$cdr3_aa, clone.names.p2$cdr3_aa, clone.names.p3$cdr3_aa))
+
+shared.cdr3.aa.p1 <- clone.names.p1$clone_name[clone.names.p1$cdr3_aa %in% common.cdr3.aa] # QQSYSTPYT
+shared.cdr3.aa.p2 <- clone.names.p2$clone_name[clone.names.p2$cdr3_aa %in% common.cdr3.aa] # QQSYSTPYT
+shared.cdr3.aa.p3 <- clone.names.p3$clone_name[clone.names.p3$cdr3_aa %in% common.cdr3.aa] # QQSYSTPYT
+
+```
+
+## Session information
+
+```{r session info}
+sessionInfo()
+```
+
+
+
